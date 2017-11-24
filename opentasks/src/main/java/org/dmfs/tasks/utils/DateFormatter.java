@@ -19,6 +19,7 @@ package org.dmfs.tasks.utils;
 import android.annotation.SuppressLint;
 import android.annotation.TargetApi;
 import android.content.Context;
+import android.content.res.Resources;
 import android.os.Build;
 import android.support.annotation.VisibleForTesting;
 import android.text.format.DateUtils;
@@ -33,6 +34,12 @@ import java.util.Date;
 import java.util.Formatter;
 import java.util.Locale;
 import java.util.TimeZone;
+
+import static android.text.format.DateUtils.DAY_IN_MILLIS;
+import static android.text.format.DateUtils.FORMAT_SHOW_TIME;
+import static android.text.format.DateUtils.WEEK_IN_MILLIS;
+import static android.text.format.DateUtils.formatDateRange;
+import static android.text.format.DateUtils.getRelativeTimeSpanString;
 
 
 /**
@@ -74,7 +81,7 @@ public class DateFormatter
                         else
                         {
                             return DateUtils.FORMAT_SHOW_DATE | DateUtils.FORMAT_SHOW_YEAR | DateUtils.FORMAT_SHOW_WEEKDAY | DateUtils.FORMAT_ABBREV_WEEKDAY
-                                    | DateUtils.FORMAT_SHOW_TIME;
+                                    | FORMAT_SHOW_TIME;
                         }
                     }
                 },
@@ -102,7 +109,7 @@ public class DateFormatter
                     @Override
                     public int getDateUtilsFlags(Time now, Time date)
                     {
-                        return DateUtils.FORMAT_SHOW_TIME | DateUtils.FORMAT_24HOUR;
+                        return FORMAT_SHOW_TIME | DateUtils.FORMAT_24HOUR;
                     }
                 },
 
@@ -119,7 +126,7 @@ public class DateFormatter
                         int result = DateUtils.FORMAT_SHOW_DATE | DateUtils.FORMAT_ABBREV_MONTH;
                         if (!date.allDay)
                         {
-                            result |= DateUtils.FORMAT_SHOW_TIME;
+                            result |= FORMAT_SHOW_TIME;
                         }
                         if (now.year != date.year)
                         {
@@ -137,7 +144,7 @@ public class DateFormatter
                     @Override
                     public int getDateUtilsFlags(Time now, Time date)
                     {
-                        return DateUtils.FORMAT_SHOW_TIME;
+                        return FORMAT_SHOW_TIME;
                     }
                 },
 
@@ -168,7 +175,7 @@ public class DateFormatter
                     @Override
                     public int getDateUtilsFlags(Time now, Time date)
                     {
-                        return DateUtils.FORMAT_SHOW_TIME;
+                        return FORMAT_SHOW_TIME;
                     }
 
 
@@ -185,7 +192,7 @@ public class DateFormatter
             if (now.year == date.year && now.yearDay == date.yearDay)
             {
                 // today, show time only
-                return DateUtils.FORMAT_SHOW_TIME;
+                return FORMAT_SHOW_TIME;
             }
             else if (now.year == date.year)
             {
@@ -285,7 +292,7 @@ public class DateFormatter
             {
                 Time allDayNow = new Time("UTC");
                 allDayNow.set(now.monthDay, now.month, now.year);
-                return DateUtils.getRelativeTimeSpanString(date.toMillis(false), allDayNow.toMillis(false), DateUtils.DAY_IN_MILLIS).toString();
+                return getRelativeTimeSpanString(date.toMillis(false), allDayNow.toMillis(false), DAY_IN_MILLIS).toString();
             }
             else if (delta < 60 * 1000)
             {
@@ -295,7 +302,7 @@ public class DateFormatter
             else if (delta < 60 * 60 * 1000)
             {
                 // time is within this hour, show number of minutes left
-                return DateUtils.getRelativeTimeSpanString(date.toMillis(false), now.toMillis(false), DateUtils.MINUTE_IN_MILLIS).toString();
+                return getRelativeTimeSpanString(date.toMillis(false), now.toMillis(false), DateUtils.MINUTE_IN_MILLIS).toString();
             }
             else if (delta < 24 * 60 * 60 * 1000)
             {
@@ -303,15 +310,18 @@ public class DateFormatter
                 // FIXME: instead of using a fixed 24 hour interval this should be aligned to midnight tomorrow and yesterday
 
                 // TODO This is just temp fix, if kept need class and test
-                String relative = DateUtils.getRelativeDateTimeString(mContext, date.toMillis(false), DateUtils.DAY_IN_MILLIS, DateUtils.WEEK_IN_MILLIS,
+                String relative = DateUtils.getRelativeDateTimeString(mContext, date.toMillis(false), DAY_IN_MILLIS, WEEK_IN_MILLIS,
                         dateContext.getDateUtilsFlags(now, date)).toString();
                 String justDate = relative.substring(0, relative.lastIndexOf(","));
-                String time = DateUtils.formatDateTime(mContext, date.toMillis(false), DateUtils.FORMAT_SHOW_TIME);
-                return justDate + ", " + time;
+                String time = DateUtils.formatDateTime(mContext, date.toMillis(false), FORMAT_SHOW_TIME);
+//                return justDate + ", " + time;
+
+                return oldGetRelativeDateTimeString(mContext, date.toMillis(false), DAY_IN_MILLIS, WEEK_IN_MILLIS,
+                        dateContext.getDateUtilsFlags(now, date)).toString();
             }
             else
             {
-                return DateUtils.getRelativeTimeSpanString(date.toMillis(false), now.toMillis(false), DateUtils.DAY_IN_MILLIS).toString();
+                return getRelativeTimeSpanString(date.toMillis(false), now.toMillis(false), DAY_IN_MILLIS).toString();
             }
         }
 
@@ -336,7 +346,7 @@ public class DateFormatter
         // use DataRange in order to set the correct timezone
         if (Build.VERSION.SDK_INT > 8)
         {
-            return DateUtils.formatDateRange(mContext, new Formatter(Locale.getDefault()), date.toMillis(false), date.toMillis(false),
+            return formatDateRange(mContext, new Formatter(Locale.getDefault()), date.toMillis(false), date.toMillis(false),
                     dateContext.getDateUtilsFlags(now, date), "UTC").toString();
         }
         else
@@ -381,5 +391,38 @@ public class DateFormatter
             time.second = 0;
         }
         return time;
+    }
+
+
+    private CharSequence oldGetRelativeDateTimeString(Context c, long time, long minResolution,
+                                                      long transitionResolution, int flags)
+    {
+        Resources r = mContext.getResources();
+        long now = System.currentTimeMillis();
+        long duration = Math.abs(now - time);
+        // getRelativeTimeSpanString() doesn't correctly format relative dates
+        // above a week or exact dates below a day, so clamp
+        // transitionResolution as needed.
+        if (transitionResolution > WEEK_IN_MILLIS)
+        {
+            transitionResolution = WEEK_IN_MILLIS;
+        }
+        else if (transitionResolution < DAY_IN_MILLIS)
+        {
+            transitionResolution = DAY_IN_MILLIS;
+        }
+        CharSequence timeClause = formatDateRange(c, time, time, FORMAT_SHOW_TIME);
+        String result;
+        if (duration < transitionResolution)
+        {
+            CharSequence relativeClause = getRelativeTimeSpanString(time, now, minResolution, flags);
+            result = r.getString(R.string.our_relative_time, relativeClause, timeClause);
+        }
+        else
+        {
+            CharSequence dateClause = getRelativeTimeSpanString(c, time, false);
+            result = r.getString(R.string.our_date_time, dateClause, timeClause);
+        }
+        return result;
     }
 }

@@ -273,4 +273,7 @@
     <string name="opentasks_permission_request_dialog_getaccounts_button_continue">Continue</string>
     <string name="opentasks_permission_request_dialog_getaccounts_button_settings">Open Settings</string>
 
+    <string name="our_relative_time">%1$s, %2$s</string>
+    <string name="our_date_time">%1$s, %2$s</string>
+
 </resources>
