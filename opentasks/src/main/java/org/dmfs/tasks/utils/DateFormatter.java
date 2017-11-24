@@ -93,9 +93,16 @@ public class DateFormatter
                         {
                             return Math.abs(date.toMillis(false) - now.toMillis(false)) < 7 * 24 * 3600 * 1000;
                         }
-                        // The DateUtils implementation of pre ICS android calculates the relative date times in fixed 24h slots and therefore is unusable for us.
+//                         The DateUtils implementation of pre ICS android calculates the relative date times in fixed 24h slots and therefore is unusable for us.
                         return false;
 
+                    }
+
+
+                    @Override
+                    public int getDateUtilsFlags(Time now, Time date)
+                    {
+                        return DateUtils.FORMAT_SHOW_TIME | DateUtils.FORMAT_24HOUR;
                     }
                 },
 
@@ -294,8 +301,13 @@ public class DateFormatter
             {
                 // time is within 24 hours, show relative string with time
                 // FIXME: instead of using a fixed 24 hour interval this should be aligned to midnight tomorrow and yesterday
-                return DateUtils.getRelativeDateTimeString(mContext, date.toMillis(false), DateUtils.DAY_IN_MILLIS, DateUtils.WEEK_IN_MILLIS,
+
+                // TODO This is just temp fix, if kept need class and test
+                String relative = DateUtils.getRelativeDateTimeString(mContext, date.toMillis(false), DateUtils.DAY_IN_MILLIS, DateUtils.WEEK_IN_MILLIS,
                         dateContext.getDateUtilsFlags(now, date)).toString();
+                String justDate = relative.substring(0, relative.lastIndexOf(","));
+                String time = DateUtils.formatDateTime(mContext, date.toMillis(false), DateUtils.FORMAT_SHOW_TIME);
+                return justDate + ", " + time;
             }
             else
             {
