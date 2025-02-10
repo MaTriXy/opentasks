@@ -8,7 +8,6 @@
     <string name="menu_add_task">Add task</string>
     <string name="menu_add_task_condensed">Add</string>
     <string name="menu_show_completed">Show completed tasks</string>
-    <string name="menu_hide_completed">Hide completed tasks</string>
     <string name="menu_show_completed_condensed">Show completed tasks</string>
     <string name="menu_sync_now">Refresh</string>
     <string name="menu_sync_now_condensed">Refresh</string>
@@ -25,6 +24,10 @@
     <string name="task_group_title_default">Tasks</string>
     <string name="quick_add_task_created">Task created</string>
     <string name="initial_local_task_list_name">My tasks</string>
+
+    <string name="opentasks_checkbox_item_count_none_checked">[ ] %d</string>
+    <string name="opentasks_checkbox_item_count_all_checked">[x] %d</string>
+    <string name="opentasks_checkbox_item_count_partially_checked">[ ] %d / [x] %d</string>
 
     <plurals name="number_of_tasks">
         <item quantity="one">%d task</item>
@@ -43,6 +46,23 @@
     <string name="opentasks_details_no_task_selected">No task selected</string>
     <string name="opentasks_task_details_menu_send_short">Send</string>
     <string name="opentasks_task_details_menu_send">Send to</string>
+
+    <!-- Title of prompt to delete a recurring task -->
+    <string name="opentasks_task_details_delete_recurring_task">Delete recurring task</string>
+    <!-- Option to remove all instances of a recurring task -->
+    <string name="opentasks_task_details_delete_all_tasks">All occurrences</string>
+    <!-- Option to remove a single instances of a recurring task -->
+    <string name="opentasks_task_details_delete_this_task">This occurrence</string>
+
+    <!-- Label of button to hide a tick box -->
+    <string name="opentasks_hide_tick_box">Text</string>
+
+    <!-- Label of button to show a tick box -->
+    <string name="opentasks_show_tick_box">Checklist</string>
+
+    <!-- Label of button to delete checklist item -->
+    <string name="opentasks_delete_item">Delete</string>
+
 
     <!-- The title of the button to add a new item to a check list. -->
     <string name="opentasks_checklist_add_item">Add item</string>
@@ -80,6 +100,7 @@
     <string name="task_priority">Priority</string>
     <string name="task_timezone">Time Zone</string>
     <string name="task_all_day">All Day</string>
+    <string name="task_recurrence">Recurrence</string>
 
     <!-- Task list due group titles -->
     <string name="task_group_no_due">No due date</string>
@@ -203,7 +224,7 @@
     <string name="fling_task_complete">Complete</string>
     <string name="fling_task_edit">Edit</string>
     <string name="fling_task_delete">Delete</string>
-    <string name="fling_task_uncomplete">Uncomplete</string>
+    <string name="fling_task_uncomplete">Resume</string>
 
     <!-- Accessibility content description -->
     <string name="cd_start_date">icon for the start date of the task</string>
@@ -227,6 +248,9 @@
     <string name="button_add_one_hour">+1 hour</string>
     <string name="button_add_one_day">+1 day</string>
 
+    <!-- Strings for QuickSettingsTile -->
+    <string name="quicksettingstile_create">Create Task</string>
+
     <!-- Dashclock -->
     <string name="dashclock_extension_title">Tasks</string>
     <string name="dashclock_extension_description">Displays information for recent tasks.</string>
@@ -235,7 +259,7 @@
     <string name="dashclock_widget_title_start_expanded">%1$s starts - %2$s</string>
     <string name="dashclock_widget_title_start_expanded_allday">%1$s starts today</string>
     <string name="dashclock_pref_displayed_task_title">Displayed events</string>
-    <string name="dashclock_pref_displayed_task_summary">Select which events of tasks are displayed in the dashclock widget</string>
+    <string name="dashclock_pref_displayed_task_summary">Select which events of tasks are displayed in the DashClock widget</string>
     <string name="dashclock_pref_displayed_task_dialog_title">Events to display</string>
     <string name="dashclock_display_type_due">due tasks</string>
     <string name="dashclock_display_type_start">starting tasks</string>
@@ -263,6 +287,39 @@
     <!-- Notification "Pulse light" enabling/disabling entry label in settings -->
     <string name="opentasks_settings_notification_lights">Pulse light</string>
 
+    <!-- Title of the general appearance screen -->
+    <string name="opentasks_preference_appearance">Appearance</string>
+
+    <!-- Theme category title -->
+    <string name="opentasks_preference_theme">Theme</string>
+
+    <!-- Option to follow the system theme  -->
+    <string name="opentasks_preference_system_theme">Follow system</string>
+    
+    <!-- System theme disclaimer -->
+    <string name="opentasks_preference_system_theme_disclaimer">Follow system is experimental and only partially implemented.</string>
+
+    <!-- Option to use a dark theme -->
+    <string name="opentasks_preference_dark_theme">Dark theme</string>
+
+    <!-- Dark theme disclaimer -->
+    <string name="opentasks_preference_dark_theme_disclaimer">Dark theme is experimental and only partially implemented.</string>
+
+    <!-- List appearance settings -->
+    <string name="opentasks_preference_appearance_task_list">Task list view</string>
+
+    <!-- Number of description lines to show -->
+    <string name="opentasks_preference_description_preview">Description preview</string>
+    <string name="opentasks_preference_description_preview_summary">The maximum number of description lines to show.</string>
+
+    <!-- If and how to show progress -->
+    <string name="opentasks_preference_show_check_list_summary">Show check list summary</string>
+    <string name="opentasks_preference_show_progress_gradient">Show progress gradient</string>
+
+    <!-- Whether to show the priority indicator -->
+    <string name="opentasks_preference_show_priority">Show Priority</string>
+
+
     <!-- Outgoing share -->
     <string name="opentasks_share_footer">Shared via OpenTasks</string>
 
@@ -272,5 +329,28 @@
     Please note that, due to an unfortunate choice by Google, the permission request will be labeled as &quot;access your contacts&quot; instead of &quot;read your accounts&quot;. See <a href="https://issuetracker.google.com/issues/37065963">Issue 37065963</a> for further information.]]></string>
     <string name="opentasks_permission_request_dialog_getaccounts_button_continue">Continue</string>
     <string name="opentasks_permission_request_dialog_getaccounts_button_settings">Open Settings</string>
+
+    <!-- Format indicating a relative expression and time. Example: "4 hours ago, 11:00 am" -->
+    <string name="opentasks_relative_time">%1$s, %2$s</string>
+    <!-- Format indicating a date and time. Example: "23 Aug, 11:00 am" -->
+    <string name="opentasks_date_time">%1$s, %2$s</string>
+
+    <!-- Title of the notification channel for pinned tasks -->
+    <string name="opentasks_notification_channel_pinned_tasks">Pinned tasks</string>
+
+    <!-- Title of the notification channel for start and due alerts -->
+    <string name="opentasks_notification_channel_due_dates">Start and due dates</string>
+
+
+    <!-- Titles of ActionMode Context menu -->
+
+    <!-- Action for URLs (most likely http/https)-->
+    <string name="opentasks_actionmode_open">Open</string>
+
+    <!-- Action for Phone numbers -->
+    <string name="opentasks_actionmode_call">Call</string>
+
+    <!-- Action for Email addresses -->
+    <string name="opentasks_actionmode_mail_to">Email</string>
 
 </resources>

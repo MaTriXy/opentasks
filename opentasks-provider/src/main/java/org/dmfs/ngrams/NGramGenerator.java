@@ -16,6 +16,7 @@
 
 package org.dmfs.ngrams;
 
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.Locale;
 import java.util.Set;
@@ -46,8 +47,6 @@ public final class NGramGenerator
     private boolean mAddSpaceInFront = false;
     private Locale mLocale = Locale.getDefault();
 
-    private char[] mTempArray;
-
 
     public NGramGenerator(int n)
     {
@@ -59,8 +58,6 @@ public final class NGramGenerator
     {
         mN = n;
         mMinWordLen = minWordLen;
-        mTempArray = new char[n];
-        mTempArray[0] = ' ';
     }
 
 
@@ -116,28 +113,15 @@ public final class NGramGenerator
      * @param data
      *         The String to analyze.
      *
-     * @return A {@link Set} containing all N-grams.
+     * @return The {@link Set} containing the N-grams.
      */
     public Set<String> getNgrams(String data)
     {
-        Set<String> result = new HashSet<String>(128);
+        if (data == null)
+        {
+            return Collections.emptySet();
+        }
 
-        return getNgrams(result, data);
-    }
-
-
-    /**
-     * Get all N-grams contained in the given String.
-     *
-     * @param set
-     *         The set to add all the N-grams to, or <code>null</code> to create a new set.
-     * @param data
-     *         The String to analyze.
-     *
-     * @return The {@link Set} containing the N-grams.
-     */
-    public Set<String> getNgrams(Set<String> set, String data)
-    {
         if (mAllLowercase)
         {
             data = data.toLowerCase(mLocale);
@@ -145,10 +129,7 @@ public final class NGramGenerator
 
         String[] words = mReturnNumbers ? SEPARATOR_PATTERN.split(data) : SEPARATOR_PATTERN_NO_NUMBERS.split(data);
 
-        if (set == null)
-        {
-            set = new HashSet<String>(128);
-        }
+        Set<String> set = new HashSet<String>(128);
 
         for (String word : words)
         {
@@ -159,12 +140,11 @@ public final class NGramGenerator
     }
 
 
-    public void getNgrams(String word, Set<String> ngrams)
+    private void getNgrams(String word, Set<String> ngrams)
     {
         final int len = word.length();
-        final int minWordLen = mMinWordLen;
 
-        if (len < minWordLen)
+        if (len < mMinWordLen)
         {
             return;
         }
@@ -181,21 +161,8 @@ public final class NGramGenerator
         {
             /*
              * Add another String with a space and the first n-1 characters of the word.
-			 * 
-			 * We could just call
-			 * 
-			 * ngrams.add(" " + word.substring(0, Math.min(len, n - 1));
-			 * 
-			 * But it's probably way more efficient like this:
-			 */
-            char[] tempArray = mTempArray;
-
-            int count = Math.min(len, n - 1);
-            for (int i = 0; i < count; ++i)
-            {
-                tempArray[i + 1] = word.charAt(i);
-            }
-            ngrams.add(new String(tempArray));
+             */
+            ngrams.add(" " + word.substring(0, Math.min(len, n - 1)));
         }
     }
 }

@@ -18,10 +18,9 @@ package org.dmfs.tasks.utils;
 
 import android.Manifest;
 import android.content.SharedPreferences;
-import android.os.Build.VERSION;
-import android.os.Build.VERSION_CODES;
+import android.os.Build;
 import android.os.Bundle;
-import android.support.v7.app.AppCompatActivity;
+import androidx.appcompat.app.AppCompatActivity;
 
 import org.dmfs.android.retentionmagic.RetentionMagic;
 import org.dmfs.tasks.utils.permission.BasicAppPermissions;
@@ -80,33 +79,17 @@ public abstract class BaseActivity extends AppCompatActivity
 
 
     @Override
-    protected void onPause()
-    {
-        super.onPause();
-        /*
-         * On older SDK version we have to store permanent data in onPause(), because there is no guarantee that onStop() will be called.
-		 */
-        if (VERSION.SDK_INT < VERSION_CODES.HONEYCOMB)
-        {
-            RetentionMagic.persist(this, mPrefs);
-        }
-    }
-
-
-    @Override
     protected void onStop()
     {
         super.onStop();
-        if (VERSION.SDK_INT >= VERSION_CODES.HONEYCOMB)
-        {
-            RetentionMagic.persist(this, mPrefs);
-        }
+        RetentionMagic.persist(this, mPrefs);
     }
 
 
     private void requestMissingGetAccountsPermission()
     {
-        if (!mGetAccountsPermission.isGranted())
+        /* This is only a thing on Android SDK Level <26. The permission has been replaced with per-account visibility. */
+        if (Build.VERSION.SDK_INT < 26 && !mGetAccountsPermission.isGranted())
         {
             PermissionRequestDialogFragment.newInstance(mGetAccountsPermission.isRequestable(this)).show(getSupportFragmentManager(), "permission-dialog");
         }

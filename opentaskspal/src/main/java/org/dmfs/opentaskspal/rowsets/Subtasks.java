@@ -16,16 +16,16 @@
 
 package org.dmfs.opentaskspal.rowsets;
 
-import android.content.ContentProviderClient;
-import android.support.annotation.NonNull;
-
+import org.dmfs.android.contentpal.Projection;
+import org.dmfs.android.contentpal.RowReference;
 import org.dmfs.android.contentpal.RowSet;
-import org.dmfs.android.contentpal.RowSnapshot;
+import org.dmfs.android.contentpal.View;
 import org.dmfs.android.contentpal.predicates.ReferringTo;
 import org.dmfs.android.contentpal.rowsets.DelegatingRowSet;
 import org.dmfs.android.contentpal.rowsets.QueryRowSet;
-import org.dmfs.opentaskspal.views.TasksView;
-import org.dmfs.tasks.contract.TaskContract;
+import org.dmfs.tasks.contract.TaskContract.Tasks;
+
+import androidx.annotation.NonNull;
 
 
 /**
@@ -33,12 +33,14 @@ import org.dmfs.tasks.contract.TaskContract;
  *
  * @author Gabor Keszthelyi
  */
-public final class Subtasks extends DelegatingRowSet<TaskContract.Tasks>
+public final class Subtasks extends DelegatingRowSet<Tasks>
 {
 
-    public Subtasks(String authority, ContentProviderClient client, @NonNull RowSnapshot<TaskContract.Tasks> parentTask)
+    public Subtasks(@NonNull View<Tasks> view,
+                    @NonNull Projection<? super Tasks> projection,
+                    @NonNull RowReference<Tasks> parentTask)
     {
-        super(new QueryRowSet<>(new TasksView(authority, client), new ReferringTo<>(TaskContract.Tasks.PARENT_ID, parentTask)));
+        super(new QueryRowSet<>(view, projection, new ReferringTo<>(Tasks.PARENT_ID, parentTask)));
     }
 
 }

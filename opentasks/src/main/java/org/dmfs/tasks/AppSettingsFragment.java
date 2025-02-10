@@ -16,27 +16,19 @@
 
 package org.dmfs.tasks;
 
-import android.os.Build;
 import android.os.Bundle;
-import android.preference.PreferenceFragment;
-import android.support.annotation.Nullable;
-import android.support.annotation.RequiresApi;
+
+import androidx.preference.PreferenceFragmentCompat;
 
 
 /**
  * Fragment for the general app settings.
- *
- * @author Gabor Keszthelyi
  */
-@RequiresApi(api = Build.VERSION_CODES.HONEYCOMB)
-public final class AppSettingsFragment extends PreferenceFragment
+public final class AppSettingsFragment extends PreferenceFragmentCompat
 {
-
     @Override
-    public void onCreate(@Nullable Bundle savedInstanceState)
+    public void onCreatePreferences(Bundle savedInstanceState, String rootKey)
     {
-        super.onCreate(savedInstanceState);
-
-        addPreferencesFromResource(R.xml.app_preferences);
+        setPreferencesFromResource(R.xml.app_preferences, rootKey);
     }
 }

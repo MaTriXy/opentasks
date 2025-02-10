@@ -17,7 +17,6 @@
 package org.dmfs.tasks.widget;
 
 import android.content.Context;
-import android.os.Build.VERSION;
 import android.text.Editable;
 import android.text.InputType;
 import android.text.TextWatcher;
@@ -247,9 +246,6 @@ public class CheckListFieldView extends AbstractFieldView implements OnCheckedCh
             @Override
             public void onFocusChange(View v, boolean hasFocus)
             {
-                itemView.findViewById(R.id.drag_handle).setVisibility(hasFocus ? View.INVISIBLE : View.VISIBLE);
-                itemView.findViewById(R.id.remove_item).setVisibility(hasFocus ? View.VISIBLE : View.INVISIBLE);
-
                 String newText = text.getText().toString();
                 if (!hasFocus && !newText.equals(item.text) && mValues != null && !mCurrentValue.equals(mAdapter.get(mValues)))
                 {
@@ -298,31 +294,6 @@ public class CheckListFieldView extends AbstractFieldView implements OnCheckedCh
             public void afterTextChanged(Editable s)
             {
                 item.text = s.toString();
-            }
-        });
-
-		/*
-         * enable memory leak workaround on android < 4.3: disable spell checker
-		 */
-        if (VERSION.SDK_INT < 18)
-        {
-            int inputType = text.getInputType();
-            text.setInputType(inputType | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
-        }
-
-        // bind the remove button
-        View removeButton = itemView.findViewById(R.id.remove_item);
-        removeButton.setTag(item);
-        removeButton.setOnClickListener(new OnClickListener()
-        {
-            @Override
-            public void onClick(View v)
-            {
-                mImm.hideSoftInputFromWindow(text.getWindowToken(), 0);
-                mCurrentValue.remove(v.getTag());
-
-                mAdapter.validateAndSet(mValues, mCurrentValue);
-                mContainer.removeDragView(itemView);
             }
         });
     }

@@ -47,20 +47,14 @@ public final class DueDataTest
     {
         DateTime due = DateTime.now();
 
-        assertThat(new DueData(due),
+        assertThat(new DueData<>(due),
                 builds(
                         withValuesOnly(
                                 containing(Tasks.DUE, due.getTimestamp()),
                                 containing(Tasks.TZ, "UTC"),
                                 containing(Tasks.IS_ALLDAY, 0),
-
                                 withNullValue(Tasks.DTSTART),
-
-                                withNullValue(Tasks.DURATION),
-
-                                withNullValue(Tasks.RDATE),
-                                withNullValue(Tasks.RRULE),
-                                withNullValue(Tasks.EXDATE)
+                                withNullValue(Tasks.DURATION)
                         )));
     }
 
@@ -70,20 +64,14 @@ public final class DueDataTest
     {
         DateTime due = DateTime.now().shiftTimeZone(TimeZone.getTimeZone("GMT+4"));
 
-        assertThat(new DueData(due),
+        assertThat(new DueData<>(due),
                 builds(
                         withValuesOnly(
                                 containing(Tasks.DUE, due.getTimestamp()),
                                 containing(Tasks.TZ, "GMT+04:00"),
                                 containing(Tasks.IS_ALLDAY, 0),
-
                                 withNullValue(Tasks.DTSTART),
-
-                                withNullValue(Tasks.DURATION),
-
-                                withNullValue(Tasks.RDATE),
-                                withNullValue(Tasks.RRULE),
-                                withNullValue(Tasks.EXDATE)
+                                withNullValue(Tasks.DURATION)
                         )));
     }
 
@@ -93,20 +81,14 @@ public final class DueDataTest
     {
         DateTime due = DateTime.now().toAllDay();
 
-        assertThat(new DueData(due),
+        assertThat(new DueData<>(due),
                 builds(
                         withValuesOnly(
                                 containing(Tasks.DUE, due.getTimestamp()),
                                 containing(Tasks.TZ, "UTC"),
                                 containing(Tasks.IS_ALLDAY, 1),
-
                                 withNullValue(Tasks.DTSTART),
-
-                                withNullValue(Tasks.DURATION),
-
-                                withNullValue(Tasks.RDATE),
-                                withNullValue(Tasks.RRULE),
-                                withNullValue(Tasks.EXDATE)
+                                withNullValue(Tasks.DURATION)
                         )));
     }
 

@@ -26,7 +26,7 @@ import android.content.res.Resources;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.net.Uri;
-import android.support.v4.content.CursorLoader;
+import androidx.loader.content.CursorLoader;
 import android.text.format.Time;
 import android.widget.RemoteViews;
 import android.widget.RemoteViewsService;
@@ -35,7 +35,6 @@ import org.dmfs.provider.tasks.AuthorityUtil;
 import org.dmfs.tasks.R;
 import org.dmfs.tasks.contract.TaskContract;
 import org.dmfs.tasks.contract.TaskContract.Instances;
-import org.dmfs.tasks.contract.TaskContract.Tasks;
 import org.dmfs.tasks.model.TaskFieldAdapters;
 import org.dmfs.tasks.utils.DateFormatter;
 import org.dmfs.tasks.utils.DateFormatter.DateFormatContext;
@@ -234,7 +233,7 @@ public class TaskListWidgetUpdaterService extends RemoteViewsService
                 row.setTextViewText(android.R.id.text1, mDueDateFormatter.format(dueDate, DateFormatContext.WIDGET_VIEW));
 
                 // highlight overdue dates & times
-                if ((!dueDate.allDay && dueDate.before(mNow) || dueDate.allDay
+                if ((!dueDate.allDay && Time.compare(dueDate, mNow) <= 0 || dueDate.allDay
                         && (dueDate.year < mNow.year || dueDate.yearDay <= mNow.yearDay && dueDate.year == mNow.year))
                         && !items[position].getIsClosed())
                 {
@@ -250,7 +249,7 @@ public class TaskListWidgetUpdaterService extends RemoteViewsService
                 row.setTextViewText(android.R.id.text1, null);
             }
 
-            Uri taskUri = ContentUris.withAppendedId(Tasks.getContentUri(mAuthority), items[position].getTaskId());
+            Uri taskUri = ContentUris.withAppendedId(Instances.getContentUri(mAuthority), items[position].getInstanceId());
             Intent i = new Intent();
             i.setData(taskUri);
             row.setOnClickFillInIntent(R.id.widget_list_item, i);
@@ -363,7 +362,7 @@ public class TaskListWidgetUpdaterService extends RemoteViewsService
 
                 while (mTasksCursor.moveToNext())
                 {
-                    items[itemIndex] = new TaskListWidgetItem(TaskFieldAdapters.INSTANCE_TASK_ID.get(mTasksCursor), TaskFieldAdapters.TITLE.get(mTasksCursor),
+                    items[itemIndex] = new TaskListWidgetItem(TaskFieldAdapters.TASK_ID.get(mTasksCursor), TaskFieldAdapters.TITLE.get(mTasksCursor),
                             TaskFieldAdapters.DUE.get(mTasksCursor), TaskFieldAdapters.LIST_COLOR.get(mTasksCursor),
                             TaskFieldAdapters.IS_CLOSED.get(mTasksCursor));
                     itemIndex++;
@@ -395,6 +394,7 @@ public class TaskListWidgetUpdaterService extends RemoteViewsService
                         + TaskContract.Instances.INSTANCE_START + "<=" + System.currentTimeMillis() + " OR " + TaskContract.Instances.INSTANCE_START
                         + " is null OR " + TaskContract.Instances.INSTANCE_START + " = " + TaskContract.Instances.INSTANCE_DUE + " )");
 
+                selection.append(" AND ").append(Instances.DISTANCE_FROM_CURRENT).append(" <=0 ");
                 if (lists != null && !lists.isEmpty())
                 {
                     selection.append(" AND ( ");

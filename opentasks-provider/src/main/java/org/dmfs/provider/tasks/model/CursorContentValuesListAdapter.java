@@ -22,6 +22,7 @@ import android.database.sqlite.SQLiteDatabase;
 
 import org.dmfs.provider.tasks.TaskDatabaseHelper;
 import org.dmfs.provider.tasks.model.adapters.FieldAdapter;
+import org.dmfs.provider.tasks.utils.ContainsValues;
 import org.dmfs.tasks.contract.TaskContract;
 
 
@@ -65,9 +66,16 @@ public class CursorContentValuesListAdapter extends AbstractListAdapter
 
 
     @Override
-    public <T> boolean isUpdated(FieldAdapter<T, ListAdapter> fieldAdapter)
+    public boolean isUpdated(FieldAdapter<?, ListAdapter> fieldAdapter)
     {
-        return mValues != null && fieldAdapter.isSetIn(mValues);
+        if (mValues == null || !fieldAdapter.isSetIn(mValues))
+        {
+            return false;
+        }
+        Object oldValue = fieldAdapter.getFrom(mCursor);
+        Object newValue = fieldAdapter.getFrom(mValues);
+
+        return oldValue == null && newValue != null || oldValue != null && !oldValue.equals(newValue);
     }
 
 
@@ -81,7 +89,7 @@ public class CursorContentValuesListAdapter extends AbstractListAdapter
     @Override
     public boolean hasUpdates()
     {
-        return mValues != null && mValues.size() > 0;
+        return mValues != null && mValues.size() > 0 && !new ContainsValues(mValues).satisfiedBy(mCursor);
     }
 
 
@@ -93,7 +101,7 @@ public class CursorContentValuesListAdapter extends AbstractListAdapter
 
 
     @Override
-    public <T> void unset(FieldAdapter<T, ListAdapter> fieldAdapter) throws IllegalStateException
+    public void unset(FieldAdapter<?, ListAdapter> fieldAdapter) throws IllegalStateException
     {
         fieldAdapter.removeFrom(mValues);
     }

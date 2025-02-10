@@ -8,7 +8,6 @@
     <string name="menu_add_task">Dodaj zadanie</string>
     <string name="menu_add_task_condensed">Dodaj</string>
     <string name="menu_show_completed">Pokazuj zakończone</string>
-    <string name="menu_hide_completed">Ukryj zakończone</string>
     <string name="menu_show_completed_condensed">Pokaż zakończone</string>
     <string name="menu_sync_now">Odśwież</string>
     <string name="menu_sync_now_condensed">Odśwież</string>
@@ -24,6 +23,7 @@
     <string name="task_group_title_progress">Stan realizacji</string>
     <string name="task_group_title_default">Zadania</string>
     <string name="quick_add_task_created">Zadanie utworzone</string>
+    <string name="initial_local_task_list_name">Moje zadania</string>
 
     <plurals name="number_of_tasks">
         <item quantity="one">%d zadanie</item>
@@ -41,13 +41,42 @@
     <string name="activity_task_details_complete_task">Zakończone zadanie</string>
     <string name="activity_task_details_pin">Przypnij</string>
     <string name="activity_task_details_pin_task">Przypnij zadanie do paska zadań</string>
+    <string name="opentasks_details_no_task_selected">Nie wybrano żadnego zadania</string>
+    <string name="opentasks_task_details_menu_send_short">Wyślij</string>
+    <string name="opentasks_task_details_menu_send">Wyślij do</string>
+    
+    <!-- Title of prompt to delete a recurring task -->
+    <string name="opentasks_task_details_delete_recurring_task">Usuń powtarzające się zadanie</string>
+    <!-- Option to remove all instances of a recurring task -->
+    <string name="opentasks_task_details_delete_all_tasks">Wszystkie zadania</string>
+    <!-- Option to remove a single instances of a recurring task -->
+    <string name="opentasks_task_details_delete_this_task">To zadanie</string>
+
+    <!-- Label of button to hide a tick box -->
+    <string name="opentasks_hide_tick_box">Tekst</string>
+
+    <!-- Label of button to show a tick box -->
+    <string name="opentasks_show_tick_box">Lista</string>
+
+    <!-- Label of button to delete checklist item -->
+    <string name="opentasks_delete_item">Usuń</string>
+    
+
+    <!-- The title of the button to add a new item to a check list. -->
+    <string name="opentasks_checklist_add_item">Dodaj pozycję</string>
+
+    <!--
+    The hint that's shown for a check list item that has no text.
+    Should be something like "Item title", "Empty item", "new item" or "Enter item title", whatever works best in your language.
+    -->
+    <string name="opentasks_checklist_empty_item_hint">Nazwa pozycji</string>
 
     <!-- Task editor -->
     <string name="activity_edit_task_title">Edytuj zadanie</string>
     <string name="activity_add_task_title">Utwórz zadanie</string>
     <string name="activity_edit_task_error_invalid_url">Błędny adres URL</string>
     <string name="activity_edit_task_task_saved">Zadanie zapisane.</string>
-    <string name="activity_edit_task_empty_task_not_saved">Puste zadanie - nie zostało zapisane.</string>
+    <string name="activity_edit_task_empty_task_not_saved">Puste zadanie nie zostało zapisane.</string>
 
     <!-- Names of task attributes -->
 
@@ -69,23 +98,24 @@
     <string name="task_priority">Priorytet</string>
     <string name="task_timezone">Strefa czasowa</string>
     <string name="task_all_day">Cały dzień</string>
+    <string name="task_recurrence">Powtarzanie</string>
 
     <!-- Task list group titles -->
     <string name="task_group_no_due">Brak daty zakończenia</string>
     <string name="task_group_overdue">Zaległe</string>
-    <string name="task_group_due_today">Na dziś</string>
+    <string name="task_group_due_today">Na dzisiaj</string>
     <string name="task_group_due_tomorrow">Na jutro</string>
-    <string name="task_group_due_within_7_days">Wkrótce</string>
+    <string name="task_group_due_within_7_days">Na następne dni</string>
     <string name="task_group_due_in_month">Na miesiąc %s</string>
-    <string name="task_group_due_in_year">W roku %d</string>
-    <string name="task_group_due_in_future">W przyszłości</string>
+    <string name="task_group_due_in_year">Na rok %d</string>
+    <string name="task_group_due_in_future">Na pozostałe dni</string>
 
     <!-- Task list start group titles -->
     <string name="task_group_start_started">Już rozpoczęte</string>
-    <string name="task_group_start_today">Dziś</string>
+    <string name="task_group_start_today">Dzisiaj</string>
     <string name="task_group_start_tomorrow">Jutro</string>
-    <string name="task_group_start_within_7_days">Kiedyś</string>
-    <string name="task_group_start_in_future">Później</string>
+    <string name="task_group_start_within_7_days">W najbliższych dniach</string>
+    <string name="task_group_start_in_future">W pozostałych dniach</string>
     <string name="task_group_due_title">Konieczne</string>
     <string name="task_group_all_title">Listy</string>
     <string name="task_group_completed_title">Zakończone</string>
@@ -97,7 +127,7 @@
     <!-- Task list progress group titles -->
     <string name="task_group_progress_0">Nie zrealizowane</string>
     <string name="task_group_progress_40">Rozpoczęte</string>
-    <string name="task_group_progress_60">Połowa wykonana</string>
+    <string name="task_group_progress_60">Częściowo wykonane</string>
     <string name="task_group_progress_80">Prawie zakończone</string>
     <string name="task_group_progress_100">Zakończone</string>
 
@@ -116,7 +146,7 @@
     <!-- Status labels -->
 
     <string name="status_needs_action">wymaga działania</string>
-    <string name="status_in_process">trwa</string>
+    <string name="status_in_process">w trakcie</string>
     <string name="status_completed">wykonane</string>
     <string name="status_cancelled">anulowane</string>
     <string name="status_incomplete">niekompletne</string>
@@ -142,8 +172,7 @@
     <string name="action_settings">Ustawienia</string>
     <string name="action_add_local_list">Dodaj listę</string>
     <string name="visible_task_lists">Wyświetlane listy</string>
-    <string name="opentasks_settings_notification_enable">Powiadomienia</string>
-    <string name="synced_task_lists">Synchronizowane listy</string>
+    <string name="synced_task_lists">Listy zsynchronizowane</string>
 
     <!-- dialogs -->
     <string name="task_list_settings_dialog_account_title">Wybierz konto</string>
@@ -216,16 +245,19 @@
     <!-- Strings for time UI widgets -->
     <string name="button_add_one_hour">+1 godzina</string>
     <string name="button_add_one_day">+1 dzień</string>
+    
+    <!-- Strings for QuickSettingsTile -->
+    <string name="quicksettingstile_create">Utwórz zadanie</string>
 
     <!-- Dashclock -->
     <string name="dashclock_extension_title">Zadania</string>
     <string name="dashclock_extension_description">Wyświetla informacje dla ostatnich zadań.</string>
-    <string name="dashclock_widget_title_due_expanded">%1$s zaplanowanych due - %2$s</string>
+    <string name="dashclock_widget_title_due_expanded">%1$s zaplanowane na - %2$s</string>
     <string name="dashclock_widget_title_due_expanded_allday">%1$s zaplanowane</string>
     <string name="dashclock_widget_title_start_expanded">%1$s zaczynające się - %2$s</string>
     <string name="dashclock_widget_title_start_expanded_allday">%1$s zaczynające się dziś</string>
-    <string name="dashclock_pref_displayed_task_title">Wyświetlone zadania</string>
-    <string name="dashclock_pref_displayed_task_summary">Wybierz, które zdarzenia zadań są wyświetlane w widżecie paska zadań</string>
+    <string name="dashclock_pref_displayed_task_title">Wyświetlane wydarzenia</string>
+    <string name="dashclock_pref_displayed_task_summary">Wybierz, które wydarzenia zadań mają być wyświetlane w widgecie DashClock</string>
     <string name="dashclock_pref_displayed_task_dialog_title">Wydarzenia do wyświetlenia</string>
     <string name="dashclock_display_type_due">zadania zaplanowane</string>
     <string name="dashclock_display_type_start">zadania rozpoczynające się</string>
@@ -240,5 +272,83 @@
 
     <!-- Incoming share -->
     <string name="share_as_task">Dodaj zadanie</string>
+    
+    <!-- Settings -->
+    <!-- Notification enable/disable switch label in settings -->
+    <string name="opentasks_settings_notification_enable">Powiadomienia</string>
+    <!-- Section title in settings for the notification signals -->
+    <string name="opentasks_settings_notification_signals_section_title">Sygnały powiadomień</string>
+    <!-- Notification Sound enabling/disabling entry label in settings -->
+    <string name="opentasks_settings_notification_sound">Dźwięk</string>
+    <!-- Notification Vibration enabling/disabling entry label in settings -->
+    <string name="opentasks_settings_notification_vibrate">Wibracja</string>
+    <!-- Notification "Pulse light" enabling/disabling entry label in settings -->
+    <string name="opentasks_settings_notification_lights">Światło pulsacyjne</string>
 
+        <!-- Title of the general appearance screen -->
+    <string name="opentasks_preference_appearance">Wygląd</string>
+
+    <!-- Theme category title -->
+    <string name="opentasks_preference_theme">Motyw</string>
+
+    <!-- Option to follow the system theme  -->
+    <string name="opentasks_preference_system_theme">Śledź system</string>
+    
+    <!-- System theme disclaimer -->
+    <string name="opentasks_preference_system_theme_disclaimer">Śledzenie systemu jest eksperymentalne i zaimplementowane tylko częściowo.</string>
+
+    <!-- Option to use a dark theme -->
+    <string name="opentasks_preference_dark_theme">Ciemny motyw</string>
+
+    <!-- Dark theme disclaimer -->
+    <string name="opentasks_preference_dark_theme_disclaimer">Ciemny motyw jest eksperymentalny i zaimplementowany tylko częściowo.</string>
+
+    <!-- List appearance settings -->
+    <string name="opentasks_preference_appearance_task_list">Widok listy zadań</string>
+
+    <!-- Number of description lines to show -->
+    <string name="opentasks_preference_description_preview">Podgląd opisu</string>
+    <string name="opentasks_preference_description_preview_summary">Maksymalna liczba wyświetlanych linii tekstu.</string>
+
+    <!-- If and how to show progress -->
+    <string name="opentasks_preference_show_check_list_summary">Pokaż podsumowanie listy kontrolnej</string>
+    <string name="opentasks_preference_show_progress_gradient">Pokaż gradient postępu</string>
+
+    <!-- Whether to show the priority indicator -->
+    <string name="opentasks_preference_show_priority">Pokaż priorytet</string>
+
+
+    <!-- Outgoing share -->
+    <string name="opentasks_share_footer">Udostępnione przez OpenTasks</string>
+
+    <!-- GET_ACCOUNTS permission (in CONTACTS permission group) requesting dialog: -->
+    <string name="opentasks_permission_request_dialog_getaccounts_title">Wymagane pozwolenie</string>
+    <string name="opentasks_permission_request_dialog_getaccounts_message"><![CDATA[Aby odczytać listę kont na Twoim urządzeniu, które obsługują synchronizację zadań, %s potrzeba pozwolenia GET_ACCOUNTS.<br/><br/>
+    Pamiętaj, że z powodu nie przemyślanego wyboru Google, prośba o pozwolenie będzie oznaczać jako &quot;uzyskanie dostępu do kontaktów&quot; zamiast &quot;czytać konta&quot;. Zobacz <a href="https://issuetracker.google.com/issues/37065963">Issue 37065963</a> w celu uzyskania dalszych informacji.]]></string>
+    <string name="opentasks_permission_request_dialog_getaccounts_button_continue">Kontyntynuj</string>
+    <string name="opentasks_permission_request_dialog_getaccounts_button_settings">Otwórz ustawienia</string>
+
+    <!-- Format indicating a relative expression and time. Example: "4 hours ago, 11:00 am" -->
+    <string name="opentasks_relative_time">%1$s, %2$s</string>
+    <!-- Format indicating a date and time. Example: "23 Aug, 11:00 am" -->
+    <string name="opentasks_date_time">%1$s %2$s</string>
+    
+    <!-- Title of the notification channel for pinned tasks -->
+    <string name="opentasks_notification_channel_pinned_tasks">Przypięte zadania</string>
+
+    <!-- Title of the notification channel for start and due alerts -->
+    <string name="opentasks_notification_channel_due_dates">Daty rozpoczęcia i realizacji</string>
+
+    
+    <!-- Titles of ActionMode Context menu -->
+
+    <!-- Action for URLs (most likely http/https)-->
+    <string name="opentasks_actionmode_open">Otwórz</string>
+
+    <!-- Action for Phone numbers -->
+    <string name="opentasks_actionmode_call">Połącz</string>
+
+    <!-- Action for Email addresses -->
+    <string name="opentasks_actionmode_mail_to">E-mail</string>
+    
 </resources>

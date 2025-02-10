@@ -18,20 +18,13 @@ package org.dmfs.tasks;
 import android.annotation.SuppressLint;
 import android.annotation.TargetApi;
 import android.app.Activity;
+import android.content.ContentUris;
 import android.content.Context;
 import android.content.Intent;
 import android.database.Cursor;
-import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
 import android.net.Uri;
-import android.os.Build.VERSION;
 import android.os.Bundle;
-import android.support.v4.app.FragmentActivity;
-import android.support.v4.app.LoaderManager;
-import android.support.v4.content.CursorLoader;
-import android.support.v4.content.Loader;
-import android.support.v7.app.ActionBar;
-import android.support.v7.app.AppCompatActivity;
 import android.text.TextUtils;
 import android.util.Log;
 import android.view.LayoutInflater;
@@ -47,10 +40,21 @@ import android.widget.LinearLayout;
 import android.widget.Spinner;
 import android.widget.Toast;
 
+import org.dmfs.android.bolts.color.elementary.ValueColor;
+import org.dmfs.android.contentpal.predicates.AllOf;
+import org.dmfs.android.contentpal.predicates.EqArg;
+import org.dmfs.android.contentpal.predicates.ReferringTo;
+import org.dmfs.android.contentpal.references.RowUriReference;
+import org.dmfs.android.contentpal.rowsets.Frozen;
+import org.dmfs.android.contentpal.rowsets.QueryRowSet;
 import org.dmfs.android.retentionmagic.SupportFragment;
 import org.dmfs.android.retentionmagic.annotations.Parameter;
 import org.dmfs.android.retentionmagic.annotations.Retain;
+import org.dmfs.jems.optional.adapters.First;
+import org.dmfs.opentaskspal.readdata.Id;
+import org.dmfs.opentaskspal.views.InstancesView;
 import org.dmfs.provider.tasks.AuthorityUtil;
+import org.dmfs.provider.tasks.utils.With;
 import org.dmfs.tasks.contract.TaskContract;
 import org.dmfs.tasks.contract.TaskContract.TaskLists;
 import org.dmfs.tasks.contract.TaskContract.Tasks;
@@ -64,15 +68,22 @@ import org.dmfs.tasks.utils.ContentValueMapper;
 import org.dmfs.tasks.utils.OnModelLoadedListener;
 import org.dmfs.tasks.utils.RecentlyUsedLists;
 import org.dmfs.tasks.utils.TasksListCursorSpinnerAdapter;
+import org.dmfs.tasks.utils.colors.BlendColor;
+import org.dmfs.tasks.utils.colors.DarkenedForStatusBar;
+import org.dmfs.tasks.utils.colors.Mixed;
 import org.dmfs.tasks.widget.ListenableScrollView;
 import org.dmfs.tasks.widget.ListenableScrollView.OnScrollListener;
 import org.dmfs.tasks.widget.TaskEdit;
 
-import java.util.Arrays;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 import java.util.TimeZone;
+
+import androidx.appcompat.app.ActionBar;
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.fragment.app.FragmentActivity;
+import androidx.loader.app.LoaderManager;
+import androidx.loader.content.CursorLoader;
+import androidx.loader.content.Loader;
 
 
 /**
@@ -100,12 +111,7 @@ public class EditTaskFragment extends SupportFragment implements LoaderManager.L
     public static final String PREFERENCE_LAST_LIST = "pref_last_list_used_for_new_event";
     public static final String PREFERENCE_LAST_ACCOUNT_TYPE = "pref_last_account_type_used_for_new_event";
 
-    /**
-     * A set of values that may affect the recurrence set of a task. If one of these values changes we have to submit all of them.
-     */
-    private final static Set<String> RECURRENCE_VALUES = new HashSet<String>(Arrays.asList(new String[] {
-            Tasks.DUE, Tasks.DTSTART, Tasks.TZ, Tasks.IS_ALLDAY,
-            Tasks.RRULE, Tasks.RDATE, Tasks.EXDATE }));
+    public static final String KEY_NEW_TASK = "new_event";
 
     /**
      * Projection into the task list.
@@ -120,14 +126,14 @@ public class EditTaskFragment extends SupportFragment implements LoaderManager.L
      */
     private interface TASK_LIST_PROJECTION_VALUES
     {
-        public final static int id = 0;
+        int id = 0;
         @SuppressWarnings("unused")
-        public final static int list_name = 1;
-        public final static int account_type = 2;
+        int list_name = 1;
+        int account_type = 2;
         @SuppressWarnings("unused")
-        public final static int account_name = 3;
+        int account_name = 3;
         @SuppressWarnings("unused")
-        public final static int list_color = 4;
+        int list_color = 4;
     }
 
 
@@ -135,9 +141,10 @@ public class EditTaskFragment extends SupportFragment implements LoaderManager.L
 
     static final ContentValueMapper CONTENT_VALUE_MAPPER = new ContentValueMapper()
             .addString(Tasks.ACCOUNT_TYPE, Tasks.ACCOUNT_NAME, Tasks.TITLE, Tasks.LOCATION, Tasks.DESCRIPTION, Tasks.GEO, Tasks.URL, Tasks.TZ, Tasks.DURATION,
-                    Tasks.LIST_NAME)
+                    Tasks.LIST_NAME, Tasks.RRULE, Tasks.RDATE)
             .addInteger(Tasks.PRIORITY, Tasks.LIST_COLOR, Tasks.TASK_COLOR, Tasks.STATUS, Tasks.CLASSIFICATION, Tasks.PERCENT_COMPLETE, Tasks.IS_ALLDAY,
-                    Tasks.IS_CLOSED, Tasks.PINNED).addLong(Tasks.LIST_ID, Tasks.DTSTART, Tasks.DUE, Tasks.COMPLETED, Tasks._ID);
+                    Tasks.IS_CLOSED, Tasks.PINNED)
+            .addLong(Tasks.LIST_ID, Tasks.DTSTART, Tasks.DUE, Tasks.COMPLETED, Tasks._ID, Tasks.ORIGINAL_INSTANCE_ID);
 
     private boolean mAppForEdit = true;
     private TasksListCursorSpinnerAdapter mTaskListAdapter;
@@ -257,7 +264,8 @@ public class EditTaskFragment extends SupportFragment implements LoaderManager.L
                 }
             });
         }
-        mAppForEdit = !Tasks.getContentUri(mAuthority).equals(mTaskUri) && mTaskUri != null;
+        mAppForEdit = !Tasks.getContentUri(mAuthority).equals(mTaskUri) && !TaskContract.Instances.getContentUri(mAuthority)
+                .equals(mTaskUri) && mTaskUri != null;
 
         mTaskListBar = (LinearLayout) inflater.inflate(R.layout.task_list_provider_bar, mHeader);
         mListSpinner = (Spinner) mTaskListBar.findViewById(R.id.task_list_spinner);
@@ -266,11 +274,6 @@ public class EditTaskFragment extends SupportFragment implements LoaderManager.L
         mListSpinner.setAdapter(mTaskListAdapter);
 
         mListSpinner.setOnItemSelectedListener(this);
-
-        if (android.os.Build.VERSION.SDK_INT < 11)
-        {
-            mListSpinner.setBackgroundDrawable(null);
-        }
 
         if (mAppForEdit)
         {
@@ -310,6 +313,7 @@ public class EditTaskFragment extends SupportFragment implements LoaderManager.L
                 // create empty ContentSet if there was no ContentSet supplied
                 if (mValues == null)
                 {
+                    // adding a new task is always done on the Tasks table
                     mValues = new ContentSet(Tasks.getContentUri(mAuthority));
                     // ensure we start with the current time zone
                     TaskFieldAdapters.TIMEZONE.set(mValues, TimeZone.getDefault());
@@ -354,9 +358,6 @@ public class EditTaskFragment extends SupportFragment implements LoaderManager.L
     }
 
 
-    ;
-
-
     @Override
     public void onDestroyView()
     {
@@ -384,8 +385,8 @@ public class EditTaskFragment extends SupportFragment implements LoaderManager.L
     {
         /*
          * If the model loads very slowly then this function may be called after onDetach. In this case check if Activity is <code>null</code> and return if
-		 * <code>true</code>. Also return if we don't have values or the values are still loading.
-		 */
+         * <code>true</code>. Also return if we don't have values or the values are still loading.
+         */
         Activity activity = getActivity();
         if (activity == null || mValues == null || mValues.isLoading())
         {
@@ -477,7 +478,7 @@ public class EditTaskFragment extends SupportFragment implements LoaderManager.L
     @Override
     public Loader<Cursor> onCreateLoader(int id, Bundle bundle)
     {
-        return new CursorLoader(mAppContext, (Uri) bundle.getParcelable(LIST_LOADER_URI), TASK_LIST_PROJECTION, bundle.getString(LIST_LOADER_FILTER), null,
+        return new CursorLoader(mAppContext, bundle.getParcelable(LIST_LOADER_URI), TASK_LIST_PROJECTION, bundle.getString(LIST_LOADER_FILTER), null,
                 null);
     }
 
@@ -539,17 +540,9 @@ public class EditTaskFragment extends SupportFragment implements LoaderManager.L
     @Override
     public boolean onOptionsItemSelected(MenuItem item)
     {
-        final int menuId = item.getItemId();
-        Activity activity = getActivity();
-        if (menuId == R.id.editor_action_save)
+        if (item.getItemId() == R.id.editor_action_save)
         {
             saveAndExit();
-            return true;
-        }
-        else if (menuId == R.id.editor_action_cancel)
-        {
-            activity.setResult(Activity.RESULT_CANCELED);
-            activity.finish();
             return true;
         }
         return false;
@@ -569,9 +562,9 @@ public class EditTaskFragment extends SupportFragment implements LoaderManager.L
                 Sources.loadModelAsync(mAppContext, contentSet.getAsString(Tasks.ACCOUNT_TYPE), EditTaskFragment.this);
             }
 
-			/*
+            /*
              * Don't start the model loader here, let onItemSelected do that.
-			 */
+             */
             setListUri(TaskLists.getContentUri(mAuthority), LIST_LOADER_VISIBLE_LISTS_FILTER);
         }
 
@@ -629,97 +622,31 @@ public class EditTaskFragment extends SupportFragment implements LoaderManager.L
     }
 
 
-    private static int darkenColor(int color)
-    {
-        float[] hsv = new float[3];
-        Color.colorToHSV(color, hsv);
-        hsv[2] = hsv[2] * 0.75f;
-        color = Color.HSVToColor(hsv);
-        return color;
-    }
-
-
-    public int mixColors(int col1, int col2)
-    {
-        int r1, g1, b1, r2, g2, b2;
-
-        int a1 = Color.alpha(col1);
-
-        r1 = Color.red(col1);
-        g1 = Color.green(col1);
-        b1 = Color.blue(col1);
-
-        r2 = Color.red(col2);
-        g2 = Color.green(col2);
-        b2 = Color.blue(col2);
-
-        int r3 = (r1 * a1 + r2 * (255 - a1)) / 255;
-        int g3 = (g1 * a1 + g2 * (255 - a1)) / 255;
-        int b3 = (b1 * a1 + b2 * (255 - a1)) / 255;
-
-        return Color.rgb(r3, g3, b3);
-    }
-
-
-    private int getBlendColor(int baseColor, int targetColor, float alpha)
-    {
-        int r1, g1, b1, r3, g3, b3;
-
-        if (alpha <= 0)
-        {
-            return targetColor;
-        }
-        else if (alpha > 254)
-        {
-            return targetColor;
-        }
-
-        r1 = Color.red(baseColor);
-        g1 = Color.green(baseColor);
-        b1 = Color.blue(baseColor);
-
-        r3 = Color.red(targetColor);
-        g3 = Color.green(targetColor);
-        b3 = Color.blue(targetColor);
-
-        int r2 = (int) Math.ceil((Math.max(0, r3 * 255 - r1 * (255 - alpha))) / alpha);
-        int g2 = (int) Math.ceil((Math.max(0, g3 * 255 - g1 * (255 - alpha))) / alpha);
-        int b2 = (int) Math.ceil((Math.max(0, b3 * 255 - b1 * (255 - alpha))) / alpha);
-
-        return Color.argb((int) alpha, r2, g2, b2);
-    }
-
-
     @SuppressLint("NewApi")
     private void updateColor(float percentage)
     {
-        if (VERSION.SDK_INT >= 11)
+        if (mColorBar == null)
         {
-            if (mColorBar == null)
-            {
-                percentage = 1;
-            }
-            else
-            {
-                percentage = Math.max(0, Math.min(Float.isNaN(percentage) ? 0 : percentage, 1));
-            }
-
-            int newColor = getBlendColor(mListColor, darkenColor(mListColor), (int) ((0.5 + 0.5 * percentage) * 255));
-            ActionBar actionBar = ((AppCompatActivity) getActivity()).getSupportActionBar();
-            actionBar.setBackgroundDrawable(new ColorDrawable(newColor));
-
-            // this is a workaround to ensure the new color is applied on all devices, some devices show a transparent ActionBar if we don't do that.
-            actionBar.setDisplayShowTitleEnabled(false);
-            actionBar.setDisplayShowTitleEnabled(true);
-
-            if (VERSION.SDK_INT >= 21)
-            {
-                Window window = getActivity().getWindow();
-                window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
-                window.setStatusBarColor(mixColors(newColor, mListColor));
-                // window.setNavigationBarColor(mixColors(newColor, mListColor));
-            }
+            percentage = 1;
         }
+        else
+        {
+            percentage = Math.max(0, Math.min(Float.isNaN(percentage) ? 0 : percentage, 1));
+        }
+        int alpha = (int) ((0.5 + 0.5 * percentage) * 255);
+
+        int newColor = new BlendColor(new ValueColor(mListColor), new DarkenedForStatusBar(mListColor), alpha).argb();
+        ActionBar actionBar = ((AppCompatActivity) getActivity()).getSupportActionBar();
+        actionBar.setBackgroundDrawable(new ColorDrawable(newColor));
+
+        // this is a workaround to ensure the new color is applied on all devices, some devices show a transparent ActionBar if we don't do that.
+        actionBar.setDisplayShowTitleEnabled(false);
+        actionBar.setDisplayShowTitleEnabled(true);
+
+        Window window = getActivity().getWindow();
+        window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
+        window.setStatusBarColor(new Mixed(newColor, mListColor).argb());
+
         mTaskListBar.setBackgroundColor(mListColor);
         if (mColorBar != null)
         {
@@ -790,12 +717,6 @@ public class EditTaskFragment extends SupportFragment implements LoaderManager.L
 
             if (!TextUtils.isEmpty(TaskFieldAdapters.TITLE.get(mValues)) || mValues.isUpdate())
             {
-
-                if (mValues.updatesAnyKey(RECURRENCE_VALUES))
-                {
-                    mValues.ensureUpdates(RECURRENCE_VALUES);
-                }
-
                 if (mValues.isInsert())
                 {
                     // update recently used lists
@@ -804,12 +725,30 @@ public class EditTaskFragment extends SupportFragment implements LoaderManager.L
 
                 mTaskUri = mValues.persist(activity);
 
-                activity.setResult(Activity.RESULT_OK, new Intent().setData(mTaskUri));
+                activity.setResult(Activity.RESULT_OK, new Intent().setData(mTaskUri).putExtra(KEY_NEW_TASK, isNewTask));
                 Toast.makeText(activity, R.string.activity_edit_task_task_saved, Toast.LENGTH_SHORT).show();
                 activity.finish();
                 if (isNewTask)
                 {
-                    activity.startActivity(new Intent("android.intent.action.VIEW", mTaskUri));
+                    // When creating a new task we're dealing with a task URI, for now we start the details view with an instance URI though
+                    // so get the first instance of the new task and open it
+                    new With<>(
+                            new First<>(
+                                    new Frozen<>(
+                                            new QueryRowSet<>(
+                                                    new InstancesView<>(mAuthority, activity.getContentResolver().acquireContentProviderClient(mAuthority)),
+                                                    Id.PROJECTION,
+                                                    new AllOf<>(
+                                                            new EqArg<>(TaskContract.Instances.DISTANCE_FROM_CURRENT, 0),
+                                                            new ReferringTo<>(TaskContract.Instances.TASK_ID, new RowUriReference<Tasks>(mTaskUri)))))))
+                            .process(
+                                    snapShot ->
+                                            activity.startActivity(
+                                                    new Intent(
+                                                            Intent.ACTION_VIEW,
+                                                            ContentUris.withAppendedId(TaskContract.Instances.getContentUri(mAuthority),
+                                                                    new Id(snapShot.values()).value()))
+                                                            .putExtra(ViewTaskActivity.EXTRA_COLOR, mListColor)));
                 }
             }
             else

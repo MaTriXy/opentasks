@@ -38,8 +38,8 @@ public class DefaultModel extends Model
     private final static LayoutDescriptor TEXT_EDIT = new LayoutDescriptor(R.layout.text_field_editor);
     private final static LayoutDescriptor TEXT_EDIT_SINGLE_LINE = new LayoutDescriptor(R.layout.text_field_editor).setOption(LayoutDescriptor.OPTION_MULTILINE,
             false);
-    private final static LayoutDescriptor CHECKLIST_VIEW = new LayoutDescriptor(R.layout.checklist_field_view);
-    private final static LayoutDescriptor CHECKLIST_EDIT = new LayoutDescriptor(R.layout.checklist_field_editor);
+    private final static LayoutDescriptor DESCRIPTION_VIEW = new LayoutDescriptor(R.layout.description_field_view);
+    private final static LayoutDescriptor DESCRIPTION_EDIT = new LayoutDescriptor(R.layout.description_field_editor);
     private final static LayoutDescriptor CHOICES_VIEW = new LayoutDescriptor(R.layout.choices_field_view);
     private final static LayoutDescriptor CHOICES_EDIT = new LayoutDescriptor(R.layout.choices_field_editor);
     private final static LayoutDescriptor PROGRESS_VIEW = new LayoutDescriptor(R.layout.percentage_field_view);
@@ -53,6 +53,7 @@ public class DefaultModel extends Model
     private final static LayoutDescriptor BOOLEAN_EDIT = new LayoutDescriptor(R.layout.boolean_field_editor);
     private final static LayoutDescriptor URL_VIEW = new LayoutDescriptor(R.layout.url_field_view);
     private final static LayoutDescriptor URL_EDIT = new LayoutDescriptor(R.layout.url_field_editor);
+    private final static LayoutDescriptor RRULE_EDIT = new LayoutDescriptor(R.layout.opentasks_rrule_field_editor);
 
     final static LayoutDescriptor LIST_COLOR_VIEW = new LayoutDescriptor(R.layout.list_color_view);
 
@@ -73,9 +74,9 @@ public class DefaultModel extends Model
 
         Context context = getContext();
 
-		/*
+        /*
          * Add a couple of fields to the model.
-		 */
+         */
         // task list color
         addField(new FieldDescriptor(context, R.id.task_field_list_color, R.string.task_list, null, TaskFieldAdapters.LIST_COLOR)
                 .setViewLayout(LIST_COLOR_VIEW).setEditorLayout(LIST_COLOR_VIEW).setNoAutoAdd(true));
@@ -106,13 +107,10 @@ public class DefaultModel extends Model
                 .setEditorLayout(TEXT_EDIT).setIcon(R.drawable.ic_detail_location));
 
         // description
-        addField(new FieldDescriptor(context, R.id.task_field_description, R.string.task_description, TaskFieldAdapters.DESCRIPTION)
-                .setViewLayout(TEXT_VIEW.setOption(LayoutDescriptor.OPTION_LINKIFY, Linkify.ALL)).setEditorLayout(TEXT_EDIT)
+        addField(new FieldDescriptor(context, R.id.task_field_checklist, R.string.task_description, TaskFieldAdapters.DESCRIPTION_CHECKLIST)
+                .setViewLayout(DESCRIPTION_VIEW)
+                .setEditorLayout(DESCRIPTION_EDIT)
                 .setIcon(R.drawable.ic_detail_description));
-
-        // description
-        addField(new FieldDescriptor(context, R.id.task_field_checklist, R.string.task_checklist, TaskFieldAdapters.CHECKLIST).setViewLayout(CHECKLIST_VIEW)
-                .setEditorLayout(CHECKLIST_EDIT).setIcon(R.drawable.ic_detail_checklist));
 
         // start
         addField(new FieldDescriptor(context, R.id.task_field_dtstart, R.string.task_start, TaskFieldAdapters.DTSTART).setViewLayout(TIME_VIEW)
@@ -124,6 +122,10 @@ public class DefaultModel extends Model
 
         // all day flag
         addField(new FieldDescriptor(context, R.id.task_field_all_day, R.string.task_all_day, TaskFieldAdapters.ALLDAY).setEditorLayout(BOOLEAN_EDIT));
+
+        // rrule
+        addField(new FieldDescriptor(context, R.id.task_field_rrule, R.string.task_recurrence, TaskFieldAdapters.RRULE)
+                .setEditorLayout(RRULE_EDIT).setIcon(R.drawable.ic_baseline_repeat_24));
 
         TimeZoneChoicesAdapter tzaca = new TimeZoneChoicesAdapter(context);
         // time zone

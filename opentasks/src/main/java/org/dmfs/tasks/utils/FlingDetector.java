@@ -19,12 +19,9 @@ package org.dmfs.tasks.utils;
 import android.animation.Animator;
 import android.animation.Animator.AnimatorListener;
 import android.annotation.SuppressLint;
-import android.annotation.TargetApi;
-import android.content.Context;
 import android.graphics.Rect;
 import android.os.Handler;
-import android.os.Vibrator;
-import android.view.Gravity;
+import android.view.HapticFeedbackConstants;
 import android.view.MotionEvent;
 import android.view.VelocityTracker;
 import android.view.View;
@@ -59,7 +56,6 @@ public class FlingDetector implements OnTouchListener, OnScrollListener
     private View mItemChildView;
     private VelocityTracker mVelocityTracker;
     private int mContentViewId;
-    private static Context mContext;
     private static Handler mHandler;
 
     private int mFlingDirection;
@@ -70,8 +66,7 @@ public class FlingDetector implements OnTouchListener, OnScrollListener
         @Override
         public void run()
         {
-            Vibrator vibrator = (Vibrator) mContext.getSystemService(Context.VIBRATOR_SERVICE);
-            vibrator.vibrate(VIBRATION_DURATION);
+            mListView.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
 
             // if we don't disallow that, fling doesn't work on some devices
             mListView.requestDisallowInterceptTouchEvent(true);
@@ -116,7 +111,7 @@ public class FlingDetector implements OnTouchListener, OnScrollListener
          *
          * @return Bitmask with LEFT_FLING or RIGHT_FLING set to indicate directions of fling which are enabled.
          */
-        public int canFling(ListView listview, int pos);
+        int canFling(ListView listview, int pos);
 
         /**
          * Notify the listener of a fling event.
@@ -132,7 +127,7 @@ public class FlingDetector implements OnTouchListener, OnScrollListener
          *
          * @return <code>true</code> if the event has been handled, <code>false</code> otherwise.
          */
-        public boolean onFlingEnd(ListView listview, View listElement, int pos, int direction);
+        boolean onFlingEnd(ListView listview, View listElement, int pos, int direction);
 
         /**
          * Notify the listener of a fling event start or direction change. This method might be called twice or more without a call to
@@ -142,12 +137,10 @@ public class FlingDetector implements OnTouchListener, OnScrollListener
          *         The parent {@link ListView} of the element that was flung.
          * @param listElement
          *         The list element that is flinging
-         * @param pos
-         *         The position of the item that was flung
          * @param direction
          *         Flag to indicate in which direction the fling was performed.
          */
-        public void onFlingStart(ListView listview, View listElement, int position, int direction);
+        void onFlingStart(ListView listview, View listElement, int position, int direction);
 
         /**
          * Notify the listener of a fling event being cancelled.
@@ -155,7 +148,7 @@ public class FlingDetector implements OnTouchListener, OnScrollListener
          * @param direction
          *         Flag to indicate in which direction the fling was performed.
          */
-        public void onFlingCancel(int direction);
+        void onFlingCancel(int direction);
     }
 
 
@@ -167,7 +160,7 @@ public class FlingDetector implements OnTouchListener, OnScrollListener
      */
     public FlingDetector(ListView listview)
     {
-        this(listview, -1, null);
+        this(listview, -1);
     }
 
 
@@ -179,24 +172,16 @@ public class FlingDetector implements OnTouchListener, OnScrollListener
      * @param flingContentViewId
      *         The layout id of the inner content view that is supposed to fling
      */
-    public FlingDetector(ListView listview, int flingContentViewId, Context context)
+    public FlingDetector(ListView listview, int flingContentViewId)
     {
         listview.setOnTouchListener(this);
         listview.setOnScrollListener(this);
         mListView = listview;
         mContentViewId = flingContentViewId;
-        mContext = context;
 
         ViewConfiguration vc = ViewConfiguration.get(listview.getContext());
 
-        if (android.os.Build.VERSION.SDK_INT <= 10)
-        {
-            mTouchSlop = vc.getScaledTouchSlop() * 2 / 3;
-        }
-        else
-        {
-            mTouchSlop = vc.getScaledTouchSlop();
-        }
+        mTouchSlop = vc.getScaledTouchSlop();
 
         mMinimumFlingVelocity = vc.getScaledMinimumFlingVelocity() * 8; // we want the user to fling harder!
         mMaximumFlingVelocity = vc.getScaledMaximumFlingVelocity() * 8;
@@ -244,7 +229,7 @@ public class FlingDetector implements OnTouchListener, OnScrollListener
                         mFlinging = false;
                         /*
                          * don't set handled = true, that would stop the touch event making it impossible to select a flingable list element
-						 */
+                         */
 
                         // start vibration detection
                         mHandler.postDelayed(mVibrateRunnable, ViewConfiguration.getTapTimeout());
@@ -445,51 +430,12 @@ public class FlingDetector implements OnTouchListener, OnScrollListener
      * @param translation
      *         The translation.
      */
-    @TargetApi(14)
     private void translateView(View v, float translation)
     {
-        // At present we don't animate on SDK levels < 14, so there is nothing do here
-        // TODO: add support for older APIs
-        if (android.os.Build.VERSION.SDK_INT >= 14 && v != null)
+        if (v != null)
         {
             v.setTranslationX(translation);
             // v.setAlpha(1 - Math.abs(translation) / v.getWidth());
-        }
-        else if (v != null)
-        {
-            android.view.ViewGroup.LayoutParams layoutParams = v.getLayoutParams();
-
-            if (layoutParams instanceof android.widget.LinearLayout.LayoutParams)
-            {
-                android.widget.LinearLayout.LayoutParams linearLayoutParams = (android.widget.LinearLayout.LayoutParams) layoutParams;
-                linearLayoutParams.setMargins((int) translation, linearLayoutParams.topMargin, -((int) translation), linearLayoutParams.bottomMargin);
-                v.setLayoutParams(linearLayoutParams);
-            }
-            else if (layoutParams instanceof android.widget.RelativeLayout.LayoutParams)
-            {
-                android.widget.RelativeLayout.LayoutParams relativeLayoutParams = (android.widget.RelativeLayout.LayoutParams) layoutParams;
-                relativeLayoutParams.setMargins((int) translation, relativeLayoutParams.topMargin, -((int) translation), relativeLayoutParams.bottomMargin);
-                v.setLayoutParams(relativeLayoutParams);
-            }
-            else if (layoutParams instanceof android.widget.FrameLayout.LayoutParams)
-            {
-                android.widget.FrameLayout.LayoutParams frameLayoutParams = (android.widget.FrameLayout.LayoutParams) layoutParams;
-                frameLayoutParams.setMargins((int) translation, frameLayoutParams.topMargin, -((int) translation), frameLayoutParams.bottomMargin);
-
-                // in frame layout we need to set a gravity for the margins
-                frameLayoutParams.gravity = Gravity.LEFT;
-
-                v.setLayoutParams(frameLayoutParams);
-            }
-            else
-            {
-                // neither a linear or a relative layout was found, use padding as fall back method
-                int paddingTop = v.getPaddingTop();
-                int paddingBottom = v.getPaddingBottom();
-
-                v.setPadding((int) translation, paddingTop, -((int) translation), paddingBottom);
-            }
-
         }
     }
 
@@ -504,13 +450,12 @@ public class FlingDetector implements OnTouchListener, OnScrollListener
      * @param velocity
      *         The velocity to use. The harder you fling the faster the animation will be.
      */
-    @TargetApi(14)
     private void animateFling(final View v, final int pos, float velocity)
     {
 
         final int direction = (velocity < 0) ? LEFT_FLING : RIGHT_FLING;
 
-        if (android.os.Build.VERSION.SDK_INT >= 14 && v != null)
+        if (v != null)
         {
 
             int parentWidth = ((View) v.getParent()).getWidth();
@@ -590,19 +535,6 @@ public class FlingDetector implements OnTouchListener, OnScrollListener
                 }
             }
         }
-        else
-        {
-            // on older APIs we just call the listener without animation
-            // TODO: add animation for older APIs
-            if (mListener != null)
-            {
-                if (!mListener.onFlingEnd(mListView, mItemChildView, pos, direction))
-                {
-                    // the event was not handled, so reset the view
-                    resetView(v);
-                }
-            }
-        }
     }
 
 
@@ -612,45 +544,11 @@ public class FlingDetector implements OnTouchListener, OnScrollListener
      * @param v
      *         The {@link View} to reset.
      */
-    @TargetApi(14)
     private void resetView(View v)
     {
-        // At present we don't animate on SDK levels < 14, so there is nothing to reset
-        // TODO: add reset code for older APIs once we animate them
-        if (android.os.Build.VERSION.SDK_INT >= 14 && v != null)
+        if (v != null)
         {
             v.animate().translationX(0).alpha(1).setDuration(100).setListener(null /* unset any previous listener! */).start();
-        }
-        else if (v != null)
-        {
-            android.view.ViewGroup.LayoutParams layoutParams = v.getLayoutParams();
-
-            if (layoutParams instanceof android.widget.LinearLayout.LayoutParams)
-            {
-                android.widget.LinearLayout.LayoutParams linearLayoutParams = (android.widget.LinearLayout.LayoutParams) layoutParams;
-                linearLayoutParams.setMargins(0, linearLayoutParams.topMargin, 0, linearLayoutParams.bottomMargin);
-                v.setLayoutParams(linearLayoutParams);
-            }
-            else if (layoutParams instanceof android.widget.RelativeLayout.LayoutParams)
-            {
-                android.widget.RelativeLayout.LayoutParams relativeLayoutParams = (android.widget.RelativeLayout.LayoutParams) layoutParams;
-                relativeLayoutParams.setMargins(0, relativeLayoutParams.topMargin, 0, relativeLayoutParams.bottomMargin);
-                v.setLayoutParams(relativeLayoutParams);
-            }
-            else if (layoutParams instanceof android.widget.FrameLayout.LayoutParams)
-            {
-                android.widget.FrameLayout.LayoutParams frameLayoutParams = (android.widget.FrameLayout.LayoutParams) layoutParams;
-                frameLayoutParams.setMargins(0, frameLayoutParams.topMargin, 0, frameLayoutParams.bottomMargin);
-                v.setLayoutParams(frameLayoutParams);
-            }
-            else
-            {
-                // neither a linear or a relative layout was found, use padding as fall back method
-                int paddingTop = v.getPaddingTop();
-                int paddingBottom = v.getPaddingBottom();
-
-                v.setPadding(0, paddingTop, 0, paddingBottom);
-            }
         }
     }
 }

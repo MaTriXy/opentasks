@@ -18,9 +18,9 @@ package org.dmfs.tasks;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
-import android.support.v4.app.Fragment;
-import android.support.v4.app.FragmentManager;
-import android.support.v4.app.FragmentStatePagerAdapter;
+import androidx.fragment.app.Fragment;
+import androidx.fragment.app.FragmentManager;
+import androidx.fragment.app.FragmentStatePagerAdapter;
 
 import org.dmfs.tasks.groupings.AbstractGroupingFactory;
 import org.dmfs.tasks.groupings.TabConfig;
@@ -45,7 +45,6 @@ public class TaskGroupPagerAdapter extends FragmentStatePagerAdapter
     @SuppressWarnings("unused")
     private static final String TAG = "TaskGroupPager";
     private final Map<Integer, AbstractGroupingFactory> mGroupingFactories = new HashMap<Integer, AbstractGroupingFactory>(16);
-    private boolean mTwoPaneLayout;
     private final TabConfig mTabConfig;
 
 
@@ -94,7 +93,7 @@ public class TaskGroupPagerAdapter extends FragmentStatePagerAdapter
         int pageId = mTabConfig.getVisibleItem(position).getId();
         AbstractGroupingFactory factory = getGroupingFactoryForId(pageId);
 
-        TaskListFragment fragment = TaskListFragment.newInstance(position, mTwoPaneLayout);
+        TaskListFragment fragment = TaskListFragment.newInstance(position);
         fragment.setExpandableGroupDescriptor(factory.getExpandableGroupDescriptor());
         fragment.setPageId(pageId);
         return fragment;
@@ -156,12 +155,6 @@ public class TaskGroupPagerAdapter extends FragmentStatePagerAdapter
     public int getCount()
     {
         return mTabConfig.visibleSize();
-    }
-
-
-    public void setTwoPaneLayout(boolean twoPane)
-    {
-        mTwoPaneLayout = twoPane;
     }
 
 

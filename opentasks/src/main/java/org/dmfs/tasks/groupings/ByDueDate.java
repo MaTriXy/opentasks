@@ -16,30 +16,28 @@
 
 package org.dmfs.tasks.groupings;
 
-import android.annotation.TargetApi;
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.content.res.Resources;
 import android.database.Cursor;
 import android.graphics.Paint;
-import android.os.Build;
 import android.view.View;
 import android.widget.BaseExpandableListAdapter;
 import android.widget.TextView;
 
-import org.dmfs.optional.NullSafe;
 import org.dmfs.tasks.R;
 import org.dmfs.tasks.contract.TaskContract.Instances;
 import org.dmfs.tasks.groupings.cursorloaders.TimeRangeCursorFactory;
 import org.dmfs.tasks.groupings.cursorloaders.TimeRangeCursorLoaderFactory;
 import org.dmfs.tasks.groupings.cursorloaders.TimeRangeShortCursorFactory;
-import org.dmfs.tasks.model.TaskFieldAdapters;
 import org.dmfs.tasks.utils.ExpandableChildDescriptor;
 import org.dmfs.tasks.utils.ExpandableGroupDescriptor;
 import org.dmfs.tasks.utils.ExpandableGroupDescriptorAdapter;
 import org.dmfs.tasks.utils.ViewDescriptor;
-import org.dmfs.tasks.widget.ProgressBackgroundView;
 
 import java.text.DateFormatSymbols;
+
+import androidx.preference.PreferenceManager;
 
 
 /**
@@ -75,10 +73,10 @@ public class ByDueDate extends AbstractGroupingFactory
         private int mFlingRevealRightViewId = R.id.fling_reveal_right;
 
 
-        @TargetApi(Build.VERSION_CODES.HONEYCOMB)
         @Override
         public void populateView(View view, Cursor cursor, BaseExpandableListAdapter adapter, int flags)
         {
+            SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(view.getContext());
             TextView title = getView(view, android.R.id.title);
             boolean isClosed = cursor.getInt(13) > 0;
 
@@ -98,35 +96,9 @@ public class ByDueDate extends AbstractGroupingFactory
                 }
             }
 
-            setDueDate((TextView) getView(view, R.id.task_due_date), null, INSTANCE_DUE_ADAPTER.get(cursor), isClosed);
+            setDueDate(getView(view, R.id.task_due_date), null, INSTANCE_DUE_ADAPTER.get(cursor), isClosed);
 
-            View divider = getView(view, R.id.divider);
-            if (divider != null)
-            {
-                divider.setVisibility((flags & FLAG_IS_LAST_CHILD) != 0 ? View.GONE : View.VISIBLE);
-            }
-
-            // display priority
-            int priority = TaskFieldAdapters.PRIORITY.get(cursor);
-            View priorityView = getView(view, R.id.task_priority_view_medium);
-            priorityView.setBackgroundResource(android.R.color.transparent);
-            priorityView.setVisibility(View.VISIBLE);
-
-            if (priority > 0 && priority < 5)
-            {
-                priorityView.setBackgroundResource(R.color.priority_red);
-            }
-            if (priority == 5)
-            {
-                priorityView.setBackgroundResource(R.color.priority_yellow);
-            }
-            if (priority > 5 && priority <= 9)
-            {
-                priorityView.setBackgroundResource(R.color.priority_green);
-            }
-
-            new ProgressBackgroundView(getView(view, R.id.percentage_background_view))
-                    .update(new NullSafe<>(TaskFieldAdapters.PERCENT_COMPLETE.get(cursor)));
+            setPrio(prefs, view, cursor);
 
             setColorBar(view, cursor);
             setDescription(view, cursor);
@@ -191,19 +163,6 @@ public class ByDueDate extends AbstractGroupingFactory
                 Resources res = view.getContext().getResources();
                 text2.setText(res.getQuantityString(R.plurals.number_of_tasks, childrenCount, childrenCount));
 
-            }
-
-            // show/hide divider
-            View divider = view.findViewById(R.id.divider);
-            if (divider != null)
-            {
-                divider.setVisibility((flags & FLAG_IS_EXPANDED) != 0 && childrenCount > 0 ? View.VISIBLE : View.GONE);
-            }
-
-            View colorbar = view.findViewById(R.id.colorbar1);
-            if (colorbar != null)
-            {
-                colorbar.setVisibility(View.GONE);
             }
         }
 

@@ -22,6 +22,7 @@ import android.database.sqlite.SQLiteDatabase;
 
 import org.dmfs.provider.tasks.TaskDatabaseHelper;
 import org.dmfs.provider.tasks.model.adapters.FieldAdapter;
+import org.dmfs.provider.tasks.utils.ContainsValues;
 import org.dmfs.tasks.contract.TaskContract;
 
 
@@ -87,9 +88,24 @@ public class CursorContentValuesTaskAdapter extends AbstractTaskAdapter
 
 
     @Override
-    public <T> boolean isUpdated(FieldAdapter<T, TaskAdapter> fieldAdapter)
+    public boolean isUpdated(FieldAdapter<?, TaskAdapter> fieldAdapter)
     {
-        return mValues != null && fieldAdapter.isSetIn(mValues);
+        if (mValues == null || !fieldAdapter.isSetIn(mValues))
+        {
+            return false;
+        }
+        Object oldValue = fieldAdapter.existsIn(mCursor) ? fieldAdapter.getFrom(mCursor) : null;
+        Object newValue = fieldAdapter.getFrom(mValues);
+        // we need to special case RRULE, because RecurrenceRule doesn't support `equals`
+        if (fieldAdapter != TaskAdapter.RRULE)
+        {
+            return oldValue == null && newValue != null || oldValue != null && !oldValue.equals(newValue);
+        }
+        else
+        {
+            // in case of RRULE we compare the String values.
+            return oldValue == null && newValue != null || oldValue != null && (newValue == null || !oldValue.toString().equals(newValue.toString()));
+        }
     }
 
 
@@ -103,7 +119,7 @@ public class CursorContentValuesTaskAdapter extends AbstractTaskAdapter
     @Override
     public boolean hasUpdates()
     {
-        return mValues != null && mValues.size() > 0;
+        return mValues != null && mValues.size() > 0 && !new ContainsValues(mValues).satisfiedBy(mCursor);
     }
 
 
@@ -115,7 +131,7 @@ public class CursorContentValuesTaskAdapter extends AbstractTaskAdapter
 
 
     @Override
-    public <T> void unset(FieldAdapter<T, TaskAdapter> fieldAdapter) throws IllegalStateException
+    public void unset(FieldAdapter<?, TaskAdapter> fieldAdapter) throws IllegalStateException
     {
         fieldAdapter.removeFrom(mValues);
     }

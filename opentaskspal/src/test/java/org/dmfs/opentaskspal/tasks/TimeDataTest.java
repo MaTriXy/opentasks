@@ -52,20 +52,14 @@ public final class TimeDataTest
         DateTime start = DateTime.now();
         DateTime due = start.addDuration(new Duration(1, 1, 0));
 
-        assertThat(new TimeData(start, due),
+        assertThat(new TimeData<>(start, due),
                 builds(
                         withValuesOnly(
                                 containing(Tasks.DTSTART, start.getTimestamp()),
                                 containing(Tasks.TZ, "UTC"),
                                 containing(Tasks.IS_ALLDAY, 0),
-
                                 containing(Tasks.DUE, due.getTimestamp()),
-
-                                withNullValue(Tasks.DURATION),
-
-                                withNullValue(Tasks.RDATE),
-                                withNullValue(Tasks.RRULE),
-                                withNullValue(Tasks.EXDATE)
+                                withNullValue(Tasks.DURATION)
                         )));
     }
 
@@ -76,20 +70,14 @@ public final class TimeDataTest
         DateTime start = DateTime.now();
         Duration duration = new Duration(1, 3, 0);
 
-        assertThat(new TimeData(start, duration),
+        assertThat(new TimeData<>(start, duration),
                 builds(
                         withValuesOnly(
                                 containing(Tasks.DTSTART, start.getTimestamp()),
                                 containing(Tasks.TZ, "UTC"),
                                 containing(Tasks.IS_ALLDAY, 0),
-
                                 withNullValue(Tasks.DUE),
-
-                                containing(Tasks.DURATION, duration.toString()),
-
-                                withNullValue(Tasks.RDATE),
-                                withNullValue(Tasks.RRULE),
-                                withNullValue(Tasks.EXDATE)
+                                containing(Tasks.DURATION, duration.toString())
                         )));
     }
 
@@ -99,20 +87,14 @@ public final class TimeDataTest
     {
         DateTime start = DateTime.now();
 
-        assertThat(new TimeData(start),
+        assertThat(new TimeData<>(start),
                 builds(
                         withValuesOnly(
                                 containing(Tasks.DTSTART, start.getTimestamp()),
                                 containing(Tasks.TZ, "UTC"),
                                 containing(Tasks.IS_ALLDAY, 0),
-
                                 withNullValue(Tasks.DUE),
-
-                                withNullValue(Tasks.DURATION),
-
-                                withNullValue(Tasks.RDATE),
-                                withNullValue(Tasks.RRULE),
-                                withNullValue(Tasks.EXDATE)
+                                withNullValue(Tasks.DURATION)
                         )));
     }
 
@@ -120,7 +102,7 @@ public final class TimeDataTest
     @Test(expected = IllegalArgumentException.class)
     public void test_whenStartIsAllDayAndDueIsNot_throwsIllegalArgument()
     {
-        new TimeData(DateTime.now().toAllDay(), DateTime.now())
+        new TimeData<>(DateTime.now().toAllDay(), DateTime.now())
                 .updatedBuilder(mock(TransactionContext.class), mock(ContentProviderOperation.Builder.class));
     }
 
@@ -128,7 +110,7 @@ public final class TimeDataTest
     @Test(expected = IllegalArgumentException.class)
     public void test_whenDueIsAllDayAndStartIsNot_throwsIllegalArgument()
     {
-        new TimeData(DateTime.now(), DateTime.now().toAllDay())
+        new TimeData<>(DateTime.now(), DateTime.now().toAllDay())
                 .updatedBuilder(mock(TransactionContext.class), mock(ContentProviderOperation.Builder.class));
     }
 
@@ -141,20 +123,14 @@ public final class TimeDataTest
 
         DateTime startExpected = start.shiftTimeZone(TimeZone.getTimeZone("GMT+6"));
 
-        assertThat(new TimeData(start, due),
+        assertThat(new TimeData<>(start, due),
                 builds(
                         withValuesOnly(
                                 containing(Tasks.DTSTART, startExpected.getTimestamp()),
                                 containing(Tasks.TZ, "GMT+06:00"),
                                 containing(Tasks.IS_ALLDAY, 0),
-
                                 containing(Tasks.DUE, due.getTimestamp()),
-
-                                withNullValue(Tasks.DURATION),
-
-                                withNullValue(Tasks.RDATE),
-                                withNullValue(Tasks.RRULE),
-                                withNullValue(Tasks.EXDATE)
+                                withNullValue(Tasks.DURATION)
                         )));
     }
 
@@ -165,20 +141,14 @@ public final class TimeDataTest
         DateTime start = DateTime.now().toAllDay();
         DateTime due = start.addDuration(new Duration(1, 3, 0));
 
-        assertThat(new TimeData(start, due),
+        assertThat(new TimeData<>(start, due),
                 builds(
                         withValuesOnly(
                                 containing(Tasks.DTSTART, start.getTimestamp()),
                                 containing(Tasks.TZ, "UTC"),
                                 containing(Tasks.IS_ALLDAY, 1),
-
                                 containing(Tasks.DUE, due.getTimestamp()),
-
-                                withNullValue(Tasks.DURATION),
-
-                                withNullValue(Tasks.RDATE),
-                                withNullValue(Tasks.RRULE),
-                                withNullValue(Tasks.EXDATE)
+                                withNullValue(Tasks.DURATION)
                         )));
     }
 }

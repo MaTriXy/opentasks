@@ -24,7 +24,6 @@ import android.content.pm.PackageManager;
 import android.content.pm.PackageManager.NameNotFoundException;
 import android.content.pm.ServiceInfo;
 import android.content.res.XmlResourceParser;
-import android.util.Log;
 
 import org.dmfs.tasks.R;
 import org.dmfs.tasks.contract.TaskContract.Tasks;
@@ -39,7 +38,6 @@ import org.dmfs.xmlobjects.builder.AbstractObjectBuilder;
 import org.dmfs.xmlobjects.pull.ParserContext;
 import org.dmfs.xmlobjects.pull.Recyclable;
 import org.dmfs.xmlobjects.pull.XmlObjectPull;
-import org.dmfs.xmlobjects.pull.XmlObjectPullParserException;
 import org.dmfs.xmlobjects.pull.XmlPath;
 
 import java.util.HashMap;
@@ -130,7 +128,7 @@ public class XmlModel extends Model
     private static final ElementDescriptor<XmlModel> XML_MODEL_DESCRIPTOR = ElementDescriptor.register(QualifiedName.get(NAMESPACE, "TaskSource"),
             new AbstractObjectBuilder<XmlModel>()
             {
-                public XmlModel get(ElementDescriptor<XmlModel> descriptor, XmlModel recycle, ParserContext context) throws XmlObjectPullParserException
+                public XmlModel get(ElementDescriptor<XmlModel> descriptor, XmlModel recycle, ParserContext context)
                 {
                     // ensure we have a state object
                     context.setState(new ModelParserState());
@@ -143,23 +141,16 @@ public class XmlModel extends Model
                 }
 
 
-                ;
-
-
                 public XmlModel update(ElementDescriptor<XmlModel> descriptor, XmlModel object, QualifiedName attribute, String value, ParserContext context)
-                        throws XmlObjectPullParserException
                 {
                     // for now we ignore all attributes
                     return object;
                 }
 
 
-                ;
-
-
                 @SuppressWarnings("unchecked")
                 public <V extends Object> XmlModel update(ElementDescriptor<XmlModel> descriptor, XmlModel object, ElementDescriptor<V> childDescriptor, V child,
-                                                          ParserContext context) throws XmlObjectPullParserException
+                                                          ParserContext context)
                 {
                     if (childDescriptor == XML_DATAKIND)
                     {
@@ -186,11 +177,6 @@ public class XmlModel extends Model
                             {
                                 state.hasStart = true;
                             }
-                            else if ("description".equals(datakind.datakind) && !datakind.hideCheckList)
-                            {
-                                Log.i(TAG, "found old description data kind, adding checklist");
-                                object.addField(FIELD_INFLATER_MAP.get("checklist").inflate(appContext, object.mModelContext, datakind));
-                            }
                         }
                         // we don't need the datakind object anymore, so recycle it
                         context.recycle((ElementDescriptor<DataKind>) childDescriptor, datakind);
@@ -200,11 +186,8 @@ public class XmlModel extends Model
                 }
 
 
-                ;
-
-
                 @SuppressWarnings("unchecked")
-                public XmlModel finish(ElementDescriptor<XmlModel> descriptor, XmlModel object, ParserContext context) throws XmlObjectPullParserException
+                public XmlModel finish(ElementDescriptor<XmlModel> descriptor, XmlModel object, ParserContext context)
                 {
                     ModelParserState state = (ModelParserState) context.getState();
                     if (state.alldayDescriptor != null)
@@ -222,14 +205,12 @@ public class XmlModel extends Model
                     return object;
                 }
 
-
-                ;
             });
 
     private final static ElementDescriptor<DataKind> XML_DATAKIND = ElementDescriptor.register(QualifiedName.get(NAMESPACE, "datakind"),
             new AbstractObjectBuilder<DataKind>()
             {
-                public DataKind get(ElementDescriptor<DataKind> descriptor, DataKind recycle, ParserContext context) throws XmlObjectPullParserException
+                public DataKind get(ElementDescriptor<DataKind> descriptor, DataKind recycle, ParserContext context)
                 {
                     if (recycle != null)
                     {
@@ -241,11 +222,7 @@ public class XmlModel extends Model
                 }
 
 
-                ;
-
-
                 public DataKind update(ElementDescriptor<DataKind> descriptor, DataKind object, QualifiedName attribute, String value, ParserContext context)
-                        throws XmlObjectPullParserException
                 {
                     if (attribute == ATTR_KIND)
                     {
@@ -258,8 +235,6 @@ public class XmlModel extends Model
                     return object;
                 }
 
-
-                ;
             });
 
     private final PackageManager mPackageManager;
@@ -333,6 +308,16 @@ public class XmlModel extends Model
             addField(new FieldDescriptor(context, R.id.task_field_list_and_account_name, R.string.task_list, null, TaskFieldAdapters.LIST_AND_ACCOUNT_NAME)
                     .setViewLayout(DefaultModel.TEXT_VIEW_NO_LINKS).setIcon(R.drawable.ic_detail_list));
 
+            if ("org.dmfs.caldav.account".equals(getAccountType()))
+            {
+                // for now we hardcode rrule support for CalDAV-Sync
+                if (getField(R.id.task_field_rrule) == null)
+                {
+                    addFieldAfter(R.id.task_field_all_day,
+                            new FieldDescriptor(context, R.id.task_field_rrule, R.string.task_recurrence, TaskFieldAdapters.RRULE)
+                                    .setEditorLayout(new LayoutDescriptor(R.layout.opentasks_rrule_field_editor)).setIcon(R.drawable.ic_baseline_repeat_24));
+                }
+            }
         }
         catch (Exception e)
         {
@@ -522,17 +507,15 @@ public class XmlModel extends Model
     {
         /*
          * Add definitions for all supported fields:
-		 */
+         */
 
         FIELD_INFLATER_MAP.put("title", new FieldInflater(TaskFieldAdapters.TITLE, R.id.task_field_title, R.string.task_title, -1, R.layout.text_field_editor,
                 R.drawable.ic_detail_description).addEditLayoutOption(LayoutDescriptor.OPTION_MULTILINE, false));
         FIELD_INFLATER_MAP.put("location", new FieldInflater(TaskFieldAdapters.LOCATION, R.id.task_field_location, R.string.task_location,
                 R.layout.opentasks_location_field_view, R.layout.text_field_editor, R.drawable.ic_detail_location).addDetailsLayoutOption(
                 LayoutDescriptor.OPTION_LINKIFY, 0));
-        FIELD_INFLATER_MAP.put("description", new FieldInflater(TaskFieldAdapters.DESCRIPTION, R.id.task_field_description, R.string.task_description,
-                R.layout.text_field_view, R.layout.text_field_editor, R.drawable.ic_detail_description));
-        FIELD_INFLATER_MAP.put("checklist", new FieldInflater(TaskFieldAdapters.CHECKLIST, R.id.task_field_checklist, R.string.task_checklist,
-                R.layout.checklist_field_view, R.layout.checklist_field_editor, R.drawable.ic_detail_checklist));
+        FIELD_INFLATER_MAP.put("description", new FieldInflater(TaskFieldAdapters.DESCRIPTION_CHECKLIST, R.id.task_field_description, R.string.task_description,
+                R.layout.description_field_view, R.layout.description_field_editor, R.drawable.ic_detail_description));
 
         FIELD_INFLATER_MAP.put("dtstart", new FieldInflater(TaskFieldAdapters.DTSTART, R.id.task_field_dtstart, R.string.task_start, R.layout.time_field_view,
                 R.layout.time_field_editor, R.drawable.ic_detail_start));
@@ -625,6 +608,9 @@ public class XmlModel extends Model
             }
 
         });
+
+        FIELD_INFLATER_MAP.put("rrule", new FieldInflater(TaskFieldAdapters.RRULE, R.id.task_field_rrule, R.string.task_recurrence, -1,
+                R.layout.opentasks_rrule_field_editor, R.drawable.ic_baseline_repeat_24));
 
     }
 }

@@ -8,7 +8,6 @@
     <string name="menu_add_task">Додати завдання</string>
     <string name="menu_add_task_condensed">Нова</string>
     <string name="menu_show_completed">Показувати виконані завдання</string>
-    <string name="menu_hide_completed">Приховувати виконані завдання</string>
     <string name="menu_show_completed_condensed">Показувати виконані завдання</string>
     <string name="menu_sync_now">Оновити</string>
     <string name="menu_sync_now_condensed">Оновити</string>
@@ -238,5 +237,7 @@
 
     <!-- Incoming share -->
     <string name="share_as_task">Нове завдання</string>
+
+    <string name="opentasks_date_time">%2$s %1$s</string>
 
 </resources>

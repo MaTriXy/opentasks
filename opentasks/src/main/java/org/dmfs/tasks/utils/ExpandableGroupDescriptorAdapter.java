@@ -18,10 +18,9 @@ package org.dmfs.tasks.utils;
 
 import android.content.Context;
 import android.database.Cursor;
+import android.database.MatrixCursor;
 import android.os.Bundle;
 import android.os.Handler;
-import android.support.v4.app.LoaderManager;
-import android.support.v4.content.Loader;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -33,6 +32,10 @@ import org.dmfs.tasks.groupings.filters.AbstractFilter;
 
 import java.util.HashSet;
 import java.util.Set;
+
+import androidx.annotation.NonNull;
+import androidx.loader.app.LoaderManager;
+import androidx.loader.content.Loader;
 
 
 /**
@@ -57,13 +60,7 @@ public class ExpandableGroupDescriptorAdapter extends CursorTreeAdapter implemen
     private Handler mHandler = new Handler();
 
 
-    public ExpandableGroupDescriptorAdapter(Context context, LoaderManager loaderManager, ExpandableGroupDescriptor descriptor)
-    {
-        this(null, context, loaderManager, descriptor);
-    }
-
-
-    public ExpandableGroupDescriptorAdapter(Cursor cursor, Context context, LoaderManager loaderManager, ExpandableGroupDescriptor descriptor)
+    public ExpandableGroupDescriptorAdapter(@NonNull Cursor cursor, @NonNull Context context, @NonNull LoaderManager loaderManager, @NonNull ExpandableGroupDescriptor descriptor)
     {
         super(cursor, context, false);
         mContext = context;
@@ -91,6 +88,23 @@ public class ExpandableGroupDescriptorAdapter extends CursorTreeAdapter implemen
     }
 
 
+    @Override
+    public View getGroupView(int groupPosition, boolean isExpanded, View convertView, ViewGroup parent)
+    {
+        try
+        {
+            return super.getGroupView(groupPosition, isExpanded, convertView, parent);
+        }
+        catch (IllegalStateException e)
+        {
+            // temporary workaround for Exception with unknown reason
+            // for no w we simply try to ignore it
+            return newGroupView(mContext, new MatrixCursor(new String[0], 1), isExpanded, parent);
+        }
+    }
+
+
+    @NonNull
     @Override
     public Loader<Cursor> onCreateLoader(int pos, Bundle arguments)
     {

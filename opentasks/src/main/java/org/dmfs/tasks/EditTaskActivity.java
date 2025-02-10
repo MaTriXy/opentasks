@@ -16,12 +16,11 @@
 
 package org.dmfs.tasks;
 
-import android.annotation.TargetApi;
 import android.content.Intent;
 import android.os.Bundle;
-import android.support.v4.app.Fragment;
-import android.support.v4.app.NavUtils;
-import android.support.v7.app.ActionBar;
+import androidx.fragment.app.Fragment;
+import androidx.core.app.NavUtils;
+import androidx.appcompat.app.ActionBar;
 import android.view.Menu;
 import android.view.MenuItem;
 
@@ -55,7 +54,6 @@ public class EditTaskActivity extends BaseActivity
     private String mAuthority;
 
 
-    @TargetApi(11)
     @Override
     protected void onCreate(Bundle savedInstanceState)
     {
@@ -64,24 +62,21 @@ public class EditTaskActivity extends BaseActivity
 
         mAuthority = AuthorityUtil.taskAuthority(this);
 
-        if (android.os.Build.VERSION.SDK_INT >= 11)
-        {
-            // hide up button in action bar
-            ActionBar actionBar = getSupportActionBar();
-            actionBar.setDisplayShowHomeEnabled(false);
-            actionBar.setDisplayHomeAsUpEnabled(true);
-            actionBar.setHomeAsUpIndicator(R.drawable.content_remove_light);
-            // actionBar.setDisplayShowTitleEnabled(false);
-        }
+        // hide up button in action bar
+        ActionBar actionBar = getSupportActionBar();
+        actionBar.setDisplayShowHomeEnabled(false);
+        actionBar.setDisplayHomeAsUpEnabled(true);
+        actionBar.setHomeAsUpIndicator(R.drawable.content_remove_light);
+        // actionBar.setDisplayShowTitleEnabled(false);
+
+        Intent intent = getIntent();
+        String action = intent.getAction();
+
+        setActivityTitle(action);
 
         if (savedInstanceState == null)
         {
-
             Bundle arguments = new Bundle();
-            Intent intent = getIntent();
-            String action = intent.getAction();
-
-            setActivityTitle(action);
 
             if (Intent.ACTION_SEND.equals(action))
             {

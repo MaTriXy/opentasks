@@ -86,14 +86,6 @@ public class CheckListFieldEditor extends AbstractFieldEditor implements OnCheck
         super.onFinishInflate();
 
         mText = (EditText) findViewById(android.R.id.text1);
-        if (mText != null && VERSION.SDK_INT < 18)
-        {
-            /*
-             * enable memory leak workaround on android < 4.3: disable spell checker
-			 */
-            int inputType = mText.getInputType();
-            mText.setInputType(inputType | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
-        }
 
         mContainer = (ViewGroup) findViewById(R.id.checklist);
     }
@@ -258,18 +250,9 @@ public class CheckListFieldEditor extends AbstractFieldEditor implements OnCheck
             viewGroup.setTag(this);
             this.index = index;
 
-			/*
-			 * enable memory leak workaround on android < 4.3: disable spell checker
-			 */
-            if (VERSION.SDK_INT < 18)
-            {
-                int inputType = mText.getInputType();
-                mText.setInputType(inputType | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
-            }
-
             checkbox.setOnCheckedChangeListener(CheckListFieldEditor.this);
 
-			/* unfortunately every EditText needs a separate TextWatcher, we only use this to add a new line once the last one is written to */
+            /* unfortunately every EditText needs a separate TextWatcher, we only use this to add a new line once the last one is written to */
             editText.addTextChangedListener(new TextWatcher()
             {
 

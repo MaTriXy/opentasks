@@ -16,10 +16,7 @@
 
 package org.dmfs.tasks.share;
 
-import android.support.annotation.Nullable;
-import android.text.format.Time;
-
-import org.dmfs.iterators.Function;
+import androidx.annotation.Nullable;
 import org.dmfs.tasks.R;
 import org.dmfs.tasks.model.ContentSet;
 import org.dmfs.tasks.model.Model;
@@ -31,8 +28,6 @@ import au.com.codeka.carrot.Bindings;
 /**
  * {@link Bindings} for accessing values from a task.
  * See the <code>switch-case</code> for the supported properties.
- * <p>
- * Uses a {@link Function} of {@link Time} to {@link String} received in the constructor to format the times.
  *
  * @author Gabor Keszthelyi
  */

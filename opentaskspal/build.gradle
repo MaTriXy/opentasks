@@ -2,7 +2,6 @@ apply plugin: 'com.android.library'
 
 android {
     compileSdkVersion COMPILE_SDK_VERSION.toInteger()
-    buildToolsVersion BUILD_TOOLS_VERSION
 
     defaultConfig {
         minSdkVersion MIN_SDK_VERSION.toInteger()
@@ -12,20 +11,25 @@ android {
         exclude 'META-INF/NOTICE'
         exclude 'META-INF/LICENSE'
     }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
 }
 
 dependencies {
-    implementation project(':opentasks-contract')
-    implementation('com.github.dmfs.contentpal:contentpal:' + CONTENTPAL_VERSION) {
-        exclude module: 'jems'
-    }
-    implementation 'org.dmfs:rfc5545-datetime:' + RFC5545_DATETIME_VERSION
-    implementation 'org.dmfs:jems:' + JEMS_VERSION
+    api project(':opentasks-contract')
+    api deps.contentpal
+    api deps.datetime
+    api deps.lib_recur
+    api deps.support_annotations
+    api deps.bolts_color
 
-    testImplementation('com.github.dmfs.contentpal:contentpal-testing:' + CONTENTPAL_VERSION) {
-        exclude module: 'jems'
-    }
-    testImplementation 'org.robolectric:robolectric:' + ROBOLECTRIC_VERSION
-    testImplementation 'junit:junit:4.12'
-    testImplementation 'org.mockito:mockito-core:2.10.0'
+    implementation deps.jems
+
+    testImplementation deps.contentpal_testing
+    testImplementation deps.jems_testing
+    testImplementation deps.robolectric
+    testImplementation deps.junit
+    testImplementation deps.mockito
 }

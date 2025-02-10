@@ -16,19 +16,13 @@
 
 package org.dmfs.tasks;
 
-import android.annotation.TargetApi;
 import android.app.Dialog;
 import android.content.Context;
 import android.content.Intent;
 import android.database.Cursor;
 import android.graphics.Color;
 import android.net.Uri;
-import android.os.Build;
-import android.os.Build.VERSION;
 import android.os.Bundle;
-import android.support.v4.app.LoaderManager;
-import android.support.v4.content.CursorLoader;
-import android.support.v4.content.Loader;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.view.ContextThemeWrapper;
@@ -58,7 +52,12 @@ import org.dmfs.tasks.contract.TaskContract.Tasks;
 import org.dmfs.tasks.model.ContentSet;
 import org.dmfs.tasks.model.TaskFieldAdapters;
 import org.dmfs.tasks.utils.RecentlyUsedLists;
+import org.dmfs.tasks.utils.SafeFragmentUiRunnable;
 import org.dmfs.tasks.utils.TasksListCursorSpinnerAdapter;
+
+import androidx.loader.app.LoaderManager;
+import androidx.loader.content.CursorLoader;
+import androidx.loader.content.Loader;
 
 
 /**
@@ -102,15 +101,15 @@ public class QuickAddDialogFragment extends SupportDialogFragment
      */
     private interface TASK_LIST_PROJECTION_VALUES
     {
-        public final static int id = 0;
+        int id = 0;
         @SuppressWarnings("unused")
-        public final static int list_name = 1;
+        int list_name = 1;
         @SuppressWarnings("unused")
-        public final static int account_type = 2;
+        int account_type = 2;
         @SuppressWarnings("unused")
-        public final static int account_name = 3;
+        int account_name = 3;
         @SuppressWarnings("unused")
-        public final static int list_color = 4;
+        int list_color = 4;
     }
 
 
@@ -155,11 +154,6 @@ public class QuickAddDialogFragment extends SupportDialogFragment
     /**
      * Create a {@link QuickAddDialogFragment} with the given title and initial text value.
      *
-     * @param titleId
-     *         The resource id of the title.
-     * @param initalText
-     *         The initial text in the input field.
-     *
      * @return A new {@link QuickAddDialogFragment}.
      */
     public static QuickAddDialogFragment newInstance(long listId)
@@ -174,11 +168,6 @@ public class QuickAddDialogFragment extends SupportDialogFragment
 
     /**
      * Create a {@link QuickAddDialogFragment} with the given title and initial text value.
-     *
-     * @param titleId
-     *         The resource id of the title.
-     * @param initalText
-     *         The initial text in the input field.
      *
      * @return A new {@link QuickAddDialogFragment}.
      */
@@ -212,16 +201,12 @@ public class QuickAddDialogFragment extends SupportDialogFragment
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState)
     {
-
-        // create ContextThemeWrapper from the original Activity Context with the custom theme
-        final Context contextThemeWrapperLight = new ContextThemeWrapper(getActivity(), R.style.ThemeOverlay_AppCompat_Light);
         final Context contextThemeWrapperDark = new ContextThemeWrapper(getActivity(), R.style.Base_Theme_AppCompat);
 
-        LayoutInflater localInflater = inflater.cloneInContext(contextThemeWrapperLight);
-        View view = localInflater.inflate(R.layout.fragment_quick_add_dialog, container);
+        View view = inflater.inflate(R.layout.fragment_quick_add_dialog, container);
 
         ViewGroup headerContainer = (ViewGroup) view.findViewById(R.id.header_container);
-        localInflater = inflater.cloneInContext(contextThemeWrapperDark);
+        LayoutInflater localInflater = inflater.cloneInContext(contextThemeWrapperDark);
         localInflater.inflate(R.layout.fragment_quick_add_dialog_header, headerContainer);
 
         if (savedInstanceState == null)
@@ -268,7 +253,7 @@ public class QuickAddDialogFragment extends SupportDialogFragment
     @Override
     public Loader<Cursor> onCreateLoader(int id, Bundle bundle)
     {
-        return new CursorLoader(getActivity(), (Uri) bundle.getParcelable(LIST_LOADER_URI), TASK_LIST_PROJECTION, bundle.getString(LIST_LOADER_FILTER), null,
+        return new CursorLoader(getActivity(), bundle.getParcelable(LIST_LOADER_URI), TASK_LIST_PROJECTION, bundle.getString(LIST_LOADER_FILTER), null,
                 null);
     }
 
@@ -383,6 +368,7 @@ public class QuickAddDialogFragment extends SupportDialogFragment
         }
         else
         {
+            // add a new task on the tasks table
             task = new ContentSet(Tasks.getContentUri(mAuthority));
         }
         task.put(Tasks.LIST_ID, mListSpinner.getSelectedItemId());
@@ -391,7 +377,6 @@ public class QuickAddDialogFragment extends SupportDialogFragment
     }
 
 
-    @TargetApi(Build.VERSION_CODES.ICE_CREAM_SANDWICH)
     @Override
     public void onClick(View v)
     {
@@ -442,21 +427,12 @@ public class QuickAddDialogFragment extends SupportDialogFragment
     }
 
 
-    @TargetApi(Build.VERSION_CODES.ICE_CREAM_SANDWICH)
     private void notifyUser(boolean close)
     {
-        if (VERSION.SDK_INT >= 14)
-        {
-            mContent.animate().alpha(0).setDuration(250).start();
-            mConfirmation.setAlpha(0);
-            mConfirmation.setVisibility(View.VISIBLE);
-            mConfirmation.animate().alpha(1).setDuration(250).start();
-        }
-        else
-        {
-            mContent.setVisibility(View.INVISIBLE);
-            mConfirmation.setVisibility(View.VISIBLE);
-        }
+        mContent.animate().alpha(0).setDuration(250).start();
+        mConfirmation.setAlpha(0);
+        mConfirmation.setVisibility(View.VISIBLE);
+        mConfirmation.animate().alpha(1).setDuration(250).start();
 
         if (close)
         {
@@ -492,37 +468,20 @@ public class QuickAddDialogFragment extends SupportDialogFragment
 
 
     /**
-     * A runnable that closes the dialog.
+     * A {@link Runnable} that closes the dialog.
      */
-    private final Runnable mDismiss = new Runnable()
-    {
-        @Override
-        public void run()
-        {
-            dismiss();
-        }
-    };
+    private final Runnable mDismiss = new SafeFragmentUiRunnable(this, this::dismiss);
 
     /**
      * A {@link Runnable} that resets the editor view.
      */
-    private final Runnable mReset = new Runnable()
+    private final Runnable mReset = new SafeFragmentUiRunnable(this, new Runnable()
     {
-
-        @TargetApi(Build.VERSION_CODES.ICE_CREAM_SANDWICH)
         @Override
         public void run()
         {
-            if (VERSION.SDK_INT >= 14)
-            {
-                mContent.animate().alpha(1).setDuration(250).start();
-                mConfirmation.animate().alpha(0).setDuration(250).start();
-            }
-            else
-            {
-                mContent.setVisibility(View.VISIBLE);
-                mConfirmation.setVisibility(View.INVISIBLE);
-            }
+            mContent.animate().alpha(1).setDuration(250).start();
+            mConfirmation.animate().alpha(0).setDuration(250).start();
             mSaveButton.setEnabled(true);
             mSaveAndNextButton.setEnabled(true);
 
@@ -534,5 +493,5 @@ public class QuickAddDialogFragment extends SupportDialogFragment
             InputMethodManager inputMethodManager = (InputMethodManager) getActivity().getSystemService(Context.INPUT_METHOD_SERVICE);
             inputMethodManager.showSoftInput(mEditText, 0);
         }
-    };
+    });
 }

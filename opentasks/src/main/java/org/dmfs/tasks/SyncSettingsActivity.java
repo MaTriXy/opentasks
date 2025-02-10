@@ -15,13 +15,15 @@
  */
 package org.dmfs.tasks;
 
-import android.annotation.TargetApi;
-import android.os.Build;
 import android.os.Bundle;
-import android.support.v4.app.FragmentActivity;
-import android.support.v4.app.FragmentManager;
+
+import androidx.appcompat.widget.Toolbar;
+import androidx.fragment.app.FragmentActivity;
+import androidx.fragment.app.FragmentManager;
 import android.view.View;
 import android.widget.Button;
+
+import com.google.android.material.appbar.AppBarLayout;
 
 import org.dmfs.tasks.contract.TaskContract;
 import org.dmfs.tasks.utils.BaseActivity;
@@ -44,7 +46,11 @@ public class SyncSettingsActivity extends BaseActivity
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_settings);
         // Show the Up button in the action bar.
-        setupActionBar();
+        AppBarLayout mAppBarLayout = findViewById(R.id.appbar);
+        Toolbar toolbar = findViewById(R.id.toolbar);
+        setSupportActionBar(toolbar);
+
+        getSupportActionBar().setDisplayHomeAsUpEnabled(true);
 
         mManager = getSupportFragmentManager();
         showVisibleListsFragment();
@@ -67,7 +73,7 @@ public class SyncSettingsActivity extends BaseActivity
         syncedListFragment.setArguments(args);
         mManager.beginTransaction().replace(R.id.visible_task_list_fragment, syncedListFragment).commit();
         mCurrentFrag = syncedListFragment;
-        showActionBarTitle(R.string.visible_task_lists);
+        getSupportActionBar().setTitle(R.string.visible_task_lists);
     }
 
 
@@ -86,30 +92,7 @@ public class SyncSettingsActivity extends BaseActivity
         syncedListFragment.setArguments(args);
         mManager.beginTransaction().replace(R.id.visible_task_list_fragment, syncedListFragment).commit();
         mCurrentFrag = syncedListFragment;
-        showActionBarTitle(R.string.synced_task_lists);
-    }
-
-
-    /**
-     * Set up the {@link android.app.ActionBar}, if the API is available.
-     */
-    @TargetApi(Build.VERSION_CODES.HONEYCOMB)
-    private void setupActionBar()
-    {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB)
-        {
-            getSupportActionBar().setDisplayHomeAsUpEnabled(true);
-        }
-    }
-
-
-    @TargetApi(Build.VERSION_CODES.HONEYCOMB)
-    private void showActionBarTitle(int titleRes)
-    {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB)
-        {
-            getSupportActionBar().setTitle(titleRes);
-        }
+        getSupportActionBar().setTitle(R.string.synced_task_lists);
     }
 
 

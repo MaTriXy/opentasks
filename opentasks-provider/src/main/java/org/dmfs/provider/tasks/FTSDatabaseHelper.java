@@ -21,6 +21,7 @@ import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.text.TextUtils;
 
+import org.dmfs.jems.iterable.decorators.Chunked;
 import org.dmfs.ngrams.NGramGenerator;
 import org.dmfs.provider.tasks.TaskDatabaseHelper.Tables;
 import org.dmfs.provider.tasks.model.TaskAdapter;
@@ -29,20 +30,28 @@ import org.dmfs.tasks.contract.TaskContract.Properties;
 import org.dmfs.tasks.contract.TaskContract.TaskColumns;
 import org.dmfs.tasks.contract.TaskContract.Tasks;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 
 /**
- * Supports the {@link TaskDatabaseHelper} in the manner of full-text-search.
+ * Supports the {@link TaskDatabaseHelper} in the matter of full-text-search.
  *
  * @author Tobias Reinsch <tobias@dmfs.org>
  * @author Marten Gajda <marten@dmfs.org>
  */
 public class FTSDatabaseHelper
 {
+    /**
+     * We search the ngram table in chunks of 500. This should be good enough for an average task but still well below
+     * the SQLITE expression length limit and the variable count limit.
+     */
+    private final static int NGRAM_SEARCH_CHUNK_SIZE = 500;
 
-    private final static float SEARCH_RESULTS_MIN_SCORE = 0.4f;
+    private final static float SEARCH_RESULTS_MIN_SCORE = 0.33f;
 
     /**
      * A Generator for 3-grams.
@@ -54,6 +63,12 @@ public class FTSDatabaseHelper
      */
     private final static NGramGenerator TETRAGRAM_GENERATOR = new NGramGenerator(4, 3 /* shorter words are fully covered by trigrams */).setAddSpaceInFront(
             true);
+    private static final String PROPERTY_NGRAM_SELECTION = String.format("%s = ? AND %s = ? AND %s = ?", FTSContentColumns.TASK_ID, FTSContentColumns.TYPE,
+            FTSContentColumns.PROPERTY_ID);
+    private static final String NON_PROPERTY_NGRAM_SELECTION = String.format("%s = ? AND %s = ? AND %s is null", FTSContentColumns.TASK_ID,
+            FTSContentColumns.TYPE,
+            FTSContentColumns.PROPERTY_ID);
+    private static final String[] NGRAM_SYNC_COLUMNS = { "_rowid_", FTSContentColumns.NGRAM_ID };
 
 
     /**
@@ -66,22 +81,22 @@ public class FTSDatabaseHelper
         /**
          * The row id of the belonging task.
          */
-        public static final String TASK_ID = "fts_task_id";
+        String TASK_ID = "fts_task_id";
 
         /**
          * The the property id of the searchable entry or <code>null</code> if the entry is not related to a property.
          */
-        public static final String PROPERTY_ID = "fts_property_id";
+        String PROPERTY_ID = "fts_property_id";
 
         /**
          * The the type of the searchable entry
          */
-        public static final String TYPE = "fts_type";
+        String TYPE = "fts_type";
 
         /**
          * An n-gram for a task.
          */
-        public static final String NGRAM_ID = "fts_ngram_id";
+        String NGRAM_ID = "fts_ngram_id";
 
     }
 
@@ -96,12 +111,12 @@ public class FTSDatabaseHelper
         /**
          * The row id of the N-gram.
          */
-        public static final String NGRAM_ID = "ngram_id";
+        String NGRAM_ID = "ngram_id";
 
         /**
          * The content of the N-gram
          */
-        public static final String TEXT = "ngram_text";
+        String TEXT = "ngram_text";
 
     }
 
@@ -127,11 +142,11 @@ public class FTSDatabaseHelper
             + " Integer PRIMARY KEY AUTOINCREMENT, " + NGramColumns.TEXT + " Text)";
 
     // FIXME: at present the minimum score is hard coded can we leave that decision to the caller?
-    private final static String SQL_RAW_QUERY_SEARCH_TASK = "SELECT %s " + ", min(1.0*count(*)/?, 1.0) as " + TaskContract.Tasks.SCORE + " from "
+    private final static String SQL_RAW_QUERY_SEARCH_TASK = "SELECT %s " + ", (1.0*count(DISTINCT " + NGramColumns.NGRAM_ID + ")/?) as " + TaskContract.Tasks.SCORE + " from "
             + FTS_NGRAM_TABLE + " join " + FTS_CONTENT_TABLE + " on (" + FTS_NGRAM_TABLE + "." + NGramColumns.NGRAM_ID + "=" + FTS_CONTENT_TABLE + "."
             + FTSContentColumns.NGRAM_ID + ") join " + Tables.INSTANCE_VIEW + " on (" + Tables.INSTANCE_VIEW + "." + TaskContract.Instances.TASK_ID + " = " + FTS_CONTENT_TABLE + "."
             + FTSContentColumns.TASK_ID + ") where %s group by " + TaskContract.Instances.TASK_ID + " having " + TaskContract.Tasks.SCORE + " >= " + SEARCH_RESULTS_MIN_SCORE
-            + " order by %s;";
+            + " and " + Tasks.VISIBLE + " = 1 order by %s;";
 
     private final static String SQL_RAW_QUERY_SEARCH_TASK_DEFAULT_PROJECTION = Tables.INSTANCE_VIEW + ".* ," + FTS_NGRAM_TABLE + "." + NGramColumns.TEXT;
 
@@ -154,22 +169,22 @@ public class FTSDatabaseHelper
         /**
          * This is an entry for the title of a task.
          */
-        public static final int TITLE = 1;
+        int TITLE = 1;
 
         /**
          * This is an entry for the description of a task.
          */
-        public static final int DESCRIPTION = 2;
+        int DESCRIPTION = 2;
 
         /**
          * This is an entry for the location of a task.
          */
-        public static final int LOCATION = 3;
+        int LOCATION = 3;
 
         /**
          * This is an entry for a property of a task.
          */
-        public static final int PROPERTY = 4;
+        int PROPERTY = 4;
 
     }
 
@@ -324,67 +339,89 @@ public class FTSDatabaseHelper
 
 
     /**
-     * Inserts NGrams into the NGram database.
+     * Returns the IDs of each of the provided ngrams, creating them in th database if necessary.
      *
      * @param db
      *         A writable {@link SQLiteDatabase}.
      * @param ngrams
-     *         The set of NGrams.
+     *         The NGrams.
      *
      * @return The ids of the ngrams in the given set.
      */
-    private static Set<Long> insertNGrams(SQLiteDatabase db, Set<String> ngrams)
+    private static Set<Long> ngramIds(SQLiteDatabase db, Set<String> ngrams)
     {
-        Set<Long> nGramIds = new HashSet<Long>(ngrams.size());
+        if (ngrams.size() == 0)
+        {
+            return Collections.emptySet();
+        }
+
+        Set<String> missingNgrams = new HashSet<>(ngrams);
+        Set<Long> ngramIds = new HashSet<>(ngrams.size() * 2);
+
+        for (Iterable<String> chunk : new Chunked<>(NGRAM_SEARCH_CHUNK_SIZE, ngrams))
+        {
+            // build selection and arguments for each chunk
+            // we can't do this in a single query because the length of sql statement and number of arguments is limited.
+
+            StringBuilder selection = new StringBuilder(NGramColumns.TEXT);
+            selection.append(" in (");
+            boolean first = true;
+            List<String> arguments = new ArrayList<>(NGRAM_SEARCH_CHUNK_SIZE);
+            for (String ngram : chunk)
+            {
+                if (first)
+                {
+                    first = false;
+                }
+                else
+                {
+                    selection.append(",");
+                }
+                selection.append("?");
+                arguments.add(ngram);
+            }
+            selection.append(" )");
+
+            try (Cursor c = db.query(FTS_NGRAM_TABLE, new String[] { NGramColumns.NGRAM_ID, NGramColumns.TEXT }, selection.toString(),
+                    arguments.toArray(new String[0]), null, null, null))
+            {
+                while (c.moveToNext())
+                {
+                    // remove the ngrams we already have in the table
+                    missingNgrams.remove(c.getString(1));
+                    // remember its id
+                    ngramIds.add(c.getLong(0));
+                }
+            }
+        }
+
         ContentValues values = new ContentValues(1);
-        for (String ngram : ngrams)
+
+        // now insert the missing ngrams and store their ids
+        for (String ngram : missingNgrams)
         {
             values.put(NGramColumns.TEXT, ngram);
-            long nGramId = db.insertWithOnConflict(FTS_NGRAM_TABLE, null, values, SQLiteDatabase.CONFLICT_IGNORE);
-            if (nGramId == -1)
-            {
-                // the docs say insertWithOnConflict returns the existing row id when CONFLICT_IGNORE is specified an the values conflict with an existing
-                // column, however, that doesn't seem to work reliably, so we when for an error condition and get the row id ourselves
-                Cursor c = db
-                        .query(FTS_NGRAM_TABLE, new String[] { NGramColumns.NGRAM_ID }, NGramColumns.TEXT + "=?", new String[] { ngram }, null, null, null);
-                try
-                {
-                    if (c.moveToFirst())
-                    {
-                        nGramId = c.getLong(0);
-                    }
-                }
-                finally
-                {
-                    c.close();
-                }
-
-            }
-            nGramIds.add(nGramId);
+            ngramIds.add(db.insert(FTS_NGRAM_TABLE, null, values));
         }
-        return nGramIds;
+        return ngramIds;
 
     }
 
 
     private static void updateEntry(SQLiteDatabase db, long taskId, long propertyId, int type, String searchableText)
     {
-        // delete existing NGram relations
-        deleteNGramRelations(db, taskId, propertyId, type);
+        // generate nGrams
+        Set<String> propertyNgrams = TRIGRAM_GENERATOR.getNgrams(searchableText);
+        propertyNgrams.addAll(TETRAGRAM_GENERATOR.getNgrams(searchableText));
 
-        if (searchableText != null && searchableText.length() > 0)
-        {
-            // generate nGrams
-            Set<String> propertyNgrams = TRIGRAM_GENERATOR.getNgrams(searchableText);
+        // get an ID for each of the Ngrams.
+        Set<Long> ngramIds = ngramIds(db, propertyNgrams);
 
-            TETRAGRAM_GENERATOR.getNgrams(propertyNgrams, searchableText);
+        // unlink unused ngrams from the task and get the missing ones we have to link to the tak
+        Set<Long> missing = syncNgrams(db, taskId, propertyId, type, ngramIds);
 
-            // insert ngrams
-            Set<Long> propertyNgramIds = insertNGrams(db, propertyNgrams);
-
-            // insert ngram relations
-            insertNGramRelations(db, propertyNgramIds, taskId, propertyId, type);
-        }
+        // insert ngram relations for all new ngrams
+        addNgrams(db, missing, taskId, propertyId, type);
     }
 
 
@@ -399,10 +436,8 @@ public class FTSDatabaseHelper
      *         The row id of the task.
      * @param propertyId
      *         The row id of the property.
-     * @param The
-     *         entry type of the relation (title, description, property).
      */
-    private static void insertNGramRelations(SQLiteDatabase db, Set<Long> ngramIds, long taskId, Long propertyId, int contentType)
+    private static void addNgrams(SQLiteDatabase db, Set<Long> ngramIds, long taskId, Long propertyId, int contentType)
     {
         ContentValues values = new ContentValues(4);
         for (Long ngramId : ngramIds)
@@ -418,14 +453,14 @@ public class FTSDatabaseHelper
             {
                 values.putNull(FTSContentColumns.PROPERTY_ID);
             }
-            db.insertWithOnConflict(FTS_CONTENT_TABLE, null, values, SQLiteDatabase.CONFLICT_IGNORE);
+            db.insert(FTS_CONTENT_TABLE, null, values);
         }
 
     }
 
 
     /**
-     * Deletes the NGram relations of a task
+     * Synchronizes the NGram relations of a task
      *
      * @param db
      *         The writable {@link SQLiteDatabase}.
@@ -435,18 +470,46 @@ public class FTSDatabaseHelper
      *         The property row id, ignored if <code>contentType</code> is not {@link SearchableTypes#PROPERTY}.
      * @param contentType
      *         The {@link SearchableTypes} type.
+     * @param ngramsIds
+     *         The set of ngrams ids which should be linked to the task
      *
      * @return The number of deleted relations.
      */
-    private static int deleteNGramRelations(SQLiteDatabase db, long taskId, long propertyId, int contentType)
+    private static Set<Long> syncNgrams(SQLiteDatabase db, long taskId, long propertyId, int contentType, Set<Long> ngramsIds)
     {
-        StringBuilder whereClause = new StringBuilder(FTSContentColumns.TASK_ID).append(" = ").append(taskId);
-        whereClause.append(" AND ").append(FTSContentColumns.TYPE).append(" = ").append(contentType);
-        if (contentType == SearchableTypes.PROPERTY)
+        String selection;
+        String[] selectionArgs;
+        if (SearchableTypes.PROPERTY == contentType)
         {
-            whereClause.append(" AND ").append(FTSContentColumns.PROPERTY_ID).append(" = ").append(propertyId);
+            selection = PROPERTY_NGRAM_SELECTION;
+            selectionArgs = new String[] { String.valueOf(taskId), String.valueOf(contentType), String.valueOf(propertyId) };
         }
-        return db.delete(FTS_CONTENT_TABLE, whereClause.toString(), null);
+        else
+        {
+            selection = NON_PROPERTY_NGRAM_SELECTION;
+            selectionArgs = new String[] { String.valueOf(taskId), String.valueOf(contentType) };
+        }
+
+        // In order to sync the ngrams, we go over each existing ngram and delete ngram relations not in the set of new ngrams
+        // Then we return the set of ngrams we didn't find
+        Set<Long> missing = new HashSet<>(ngramsIds);
+        try (Cursor c = db.query(FTS_CONTENT_TABLE, NGRAM_SYNC_COLUMNS, selection, selectionArgs, null, null, null))
+        {
+            while (c.moveToNext())
+            {
+                Long ngramId = c.getLong(1);
+                if (!ngramsIds.contains(ngramId))
+                {
+                    db.delete(FTS_CONTENT_TABLE, "_rowid_ = ?", new String[] { c.getString(0) });
+                }
+                else
+                {
+                    // this ngram wasn't missing
+                    missing.remove(ngramId);
+                }
+            }
+        }
+        return missing;
     }
 
 
@@ -486,7 +549,7 @@ public class FTSDatabaseHelper
         }
 
         Set<String> ngrams = TRIGRAM_GENERATOR.getNgrams(searchString);
-        TETRAGRAM_GENERATOR.getNgrams(ngrams, searchString);
+        ngrams.addAll(TETRAGRAM_GENERATOR.getNgrams(searchString));
 
         String[] queryArgs;
 

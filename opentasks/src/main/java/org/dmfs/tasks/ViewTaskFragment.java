@@ -21,28 +21,15 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.ContentValues;
 import android.content.Context;
-import android.content.DialogInterface;
-import android.content.DialogInterface.OnClickListener;
 import android.content.Intent;
+import android.content.OperationApplicationException;
 import android.content.res.ColorStateList;
 import android.database.ContentObserver;
-import android.graphics.Color;
 import android.net.Uri;
-import android.os.Build;
-import android.os.Build.VERSION;
 import android.os.Bundle;
-import android.support.design.widget.AppBarLayout;
-import android.support.design.widget.AppBarLayout.OnOffsetChangedListener;
-import android.support.design.widget.CoordinatorLayout;
-import android.support.design.widget.FloatingActionButton;
-import android.support.design.widget.Snackbar;
-import android.support.v4.app.ActivityCompat;
-import android.support.v4.view.MenuItemCompat;
-import android.support.v7.app.AppCompatActivity;
-import android.support.v7.widget.ShareActionProvider;
-import android.support.v7.widget.Toolbar;
-import android.support.v7.widget.Toolbar.OnMenuItemClickListener;
+import android.os.RemoteException;
 import android.text.TextUtils;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuInflater;
@@ -52,24 +39,53 @@ import android.view.ViewGroup;
 import android.view.animation.AlphaAnimation;
 import android.widget.TextView;
 
+import com.google.android.material.appbar.AppBarLayout;
+import com.google.android.material.appbar.AppBarLayout.OnOffsetChangedListener;
+import com.google.android.material.floatingactionbutton.FloatingActionButton;
+import com.google.android.material.snackbar.Snackbar;
+
+import org.dmfs.android.bolts.color.Color;
+import org.dmfs.android.bolts.color.elementary.ValueColor;
+import org.dmfs.android.contentpal.Operation;
+import org.dmfs.android.contentpal.operations.BulkDelete;
+import org.dmfs.android.contentpal.predicates.AnyOf;
+import org.dmfs.android.contentpal.predicates.EqArg;
+import org.dmfs.android.contentpal.predicates.IdIn;
+import org.dmfs.android.contentpal.transactions.BaseTransaction;
 import org.dmfs.android.retentionmagic.SupportFragment;
 import org.dmfs.android.retentionmagic.annotations.Parameter;
 import org.dmfs.android.retentionmagic.annotations.Retain;
+import org.dmfs.jems.iterable.adapters.PresentValues;
+import org.dmfs.jems.optional.elementary.NullSafe;
+import org.dmfs.jems.single.combined.Backed;
+import org.dmfs.opentaskspal.tables.InstanceTable;
+import org.dmfs.opentaskspal.tables.TasksTable;
+import org.dmfs.tasks.contract.TaskContract;
 import org.dmfs.tasks.contract.TaskContract.Tasks;
 import org.dmfs.tasks.model.ContentSet;
 import org.dmfs.tasks.model.Model;
 import org.dmfs.tasks.model.OnContentChangeListener;
 import org.dmfs.tasks.model.Sources;
 import org.dmfs.tasks.model.TaskFieldAdapters;
-import org.dmfs.tasks.notification.TaskNotificationHandler;
+import org.dmfs.tasks.notification.ActionService;
 import org.dmfs.tasks.share.ShareIntentFactory;
 import org.dmfs.tasks.utils.ContentValueMapper;
 import org.dmfs.tasks.utils.OnModelLoadedListener;
+import org.dmfs.tasks.utils.SafeFragmentUiRunnable;
+import org.dmfs.tasks.utils.colors.AdjustedForFab;
 import org.dmfs.tasks.widget.TaskView;
 
-import java.util.Arrays;
-import java.util.HashSet;
-import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
+
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.widget.ShareActionProvider;
+import androidx.appcompat.widget.Toolbar;
+import androidx.appcompat.widget.Toolbar.OnMenuItemClickListener;
+import androidx.coordinatorlayout.widget.CoordinatorLayout;
+import androidx.core.app.ActivityCompat;
+import androidx.core.view.MenuItemCompat;
 
 
 /**
@@ -83,17 +99,18 @@ public class ViewTaskFragment extends SupportFragment
         implements OnModelLoadedListener, OnContentChangeListener, OnMenuItemClickListener, OnOffsetChangedListener
 {
     private final static String ARG_URI = "uri";
-
-    /**
-     * A set of values that may affect the recurrence set of a task. If one of these values changes we have to submit all of them.
-     */
-    private final static Set<String> RECURRENCE_VALUES = new HashSet<String>(
-            Arrays.asList(new String[] { Tasks.DUE, Tasks.DTSTART, Tasks.TZ, Tasks.IS_ALLDAY, Tasks.RRULE, Tasks.RDATE, Tasks.EXDATE }));
+    private static final String ARG_STARTING_COLOR = "starting_color";
 
     /**
      * The {@link ContentValueMapper} that knows how to map the values in a cursor to {@link ContentValues}.
      */
-    private static final ContentValueMapper CONTENT_VALUE_MAPPER = EditTaskFragment.CONTENT_VALUE_MAPPER;
+
+    private static final ContentValueMapper CONTENT_VALUE_MAPPER = new ContentValueMapper()
+            .addString(Tasks.ACCOUNT_TYPE, Tasks.ACCOUNT_NAME, Tasks.TITLE, Tasks.LOCATION, Tasks.DESCRIPTION, Tasks.GEO, Tasks.URL, Tasks.TZ, Tasks.DURATION,
+                    Tasks.LIST_NAME, Tasks.RRULE, Tasks.RDATE)
+            .addInteger(Tasks.PRIORITY, Tasks.LIST_COLOR, Tasks.TASK_COLOR, Tasks.STATUS, Tasks.CLASSIFICATION, Tasks.PERCENT_COMPLETE, Tasks.IS_ALLDAY,
+                    Tasks.IS_CLOSED, Tasks.PINNED, TaskContract.Instances.IS_RECURRING)
+            .addLong(Tasks.LIST_ID, Tasks.DTSTART, Tasks.DUE, Tasks.COMPLETED, Tasks._ID, Tasks.ORIGINAL_INSTANCE_ID, TaskContract.Instances.TASK_ID);
 
     private static final float PERCENTAGE_TO_HIDE_TITLE_DETAILS = 0.3f;
     private static final int ALPHA_ANIMATIONS_DURATION = 200;
@@ -152,38 +169,28 @@ public class ViewTaskFragment extends SupportFragment
 
     private boolean mIsTheTitleContainerVisible = true;
 
-    /**
-     * A Runnable that updates the view.
-     */
-    private Runnable mUpdateViewRunnable = new Runnable()
-    {
-        @Override
-        public void run()
-        {
-            updateView();
-        }
-    };
-
 
     public interface Callback
     {
         /**
-         * This is called to instruct the Activity to call the editor for a specific task.
+         * Called when user pressed 'edit' for the task.
          *
          * @param taskUri
          *         The {@link Uri} of the task to edit.
          * @param data
          *         The task data that belongs to the {@link Uri}. This is purely an optimization and may be <code>null</code>.
          */
-        public void onEditTask(Uri taskUri, ContentSet data);
+        void onTaskEditRequested(@NonNull Uri taskUri, @Nullable ContentSet data);
 
         /**
-         * This is called to inform the Activity that a task has been deleted.
-         *
-         * @param taskUri
-         *         The {@link Uri} of the deleted task. Note that the Uri is likely to be invalid at the time of calling this method.
+         * Called when the task has been deleted by the user.
          */
-        public void onDelete(Uri taskUri);
+        void onTaskDeleted(@NonNull Uri taskUri);
+
+        /**
+         * Called when the task has been marked completed by the user.
+         */
+        void onTaskCompleted(@NonNull Uri taskUri);
 
         /**
          * Notifies the listener about the list color of the current task.
@@ -191,28 +198,25 @@ public class ViewTaskFragment extends SupportFragment
          * @param color
          *         The color.
          */
-        public void updateColor(int color);
-    }
-
-
-    public static ViewTaskFragment newInstance(Uri uri)
-    {
-        ViewTaskFragment result = new ViewTaskFragment();
-        if (uri != null)
-        {
-            Bundle args = new Bundle();
-            args.putParcelable(ARG_URI, uri);
-            result.setArguments(args);
-        }
-        return result;
+        void onListColorLoaded(@NonNull Color color);
     }
 
 
     /**
-     * Mandatory empty constructor for the fragment manager to instantiate the fragment (e.g. upon screen orientation changes).
+     * @param taskContentUri
+     *         the content uri of the task to display
+     * @param startingColor
+     *         The color that is used for the toolbars until the actual task color is loaded. (If available provide the actual task list color, otherwise the
+     *         primary color.)
      */
-    public ViewTaskFragment()
+    public static ViewTaskFragment newInstance(@NonNull Uri taskContentUri, @NonNull Color startingColor)
     {
+        ViewTaskFragment fragment = new ViewTaskFragment();
+        Bundle args = new Bundle();
+        args.putParcelable(ARG_URI, taskContentUri);
+        args.putInt(ARG_STARTING_COLOR, startingColor.argb());
+        fragment.setArguments(args);
+        return fragment;
     }
 
 
@@ -255,11 +259,6 @@ public class ViewTaskFragment extends SupportFragment
             mAppContext.getContentResolver().unregisterContentObserver(mObserver);
         }
 
-        if (mContent != null)
-        {
-            mContent.removeAllViews();
-        }
-
         if (mDetailView != null)
         {
             // remove values, to ensure all listeners get released
@@ -272,10 +271,12 @@ public class ViewTaskFragment extends SupportFragment
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState)
     {
-        mShowFloatingActionButton = getResources().getBoolean(R.bool.opentasks_enabled_detail_view_fab);
+        mShowFloatingActionButton = !getResources().getBoolean(R.bool.has_two_panes);
 
         mRootView = inflater.inflate(R.layout.fragment_task_view_detail, container, false);
         mContent = (ViewGroup) mRootView.findViewById(R.id.content);
+        mDetailView = (TaskView) inflater.inflate(R.layout.task_view, mContent, false);
+        mContent.addView(mDetailView);
         mAppBar = (AppBarLayout) mRootView.findViewById(R.id.appbar);
         mToolBar = (Toolbar) mRootView.findViewById(R.id.toolbar);
         mToolBar.setOnMenuItemClickListener(this);
@@ -286,15 +287,12 @@ public class ViewTaskFragment extends SupportFragment
 
         mFloatingActionButton = (FloatingActionButton) mRootView.findViewById(R.id.floating_action_button);
         showFloatingActionButton(false);
-        mFloatingActionButton.setOnClickListener(new View.OnClickListener()
-        {
+        mFloatingActionButton.setOnClickListener(v -> completeTask());
 
-            @Override
-            public void onClick(View v)
-            {
-                completeTask();
-            }
-        });
+        // Update the toolbar color until the actual is loaded for the task
+
+        mListColor = new ValueColor(getArguments().getInt(ARG_STARTING_COLOR)).argb();
+        updateColor();
 
         mRestored = savedInstanceState != null;
 
@@ -351,6 +349,17 @@ public class ViewTaskFragment extends SupportFragment
     }
 
 
+    /*
+       TODO Refactor, simplify ViewTaskFragment now that it is only for displaying a single task once.
+       Ticket for this: https://github.com/dmfs/opentasks/issues/628
+
+       Earlier this Fragment was responsible for displaying no task (empty content)
+       and also updating itself to show a newly selected one, using this loadUri() method which was public at the time.
+       After refactorings, the Fragment is now only responsible to load an existing task once, for the task uri that is received in the args.
+       As a result this class can now be simplified, for example potentially removing all uri == null checks.
+     */
+
+
     /**
      * Load the task with the given {@link Uri} in the detail view.
      * <p>
@@ -361,7 +370,7 @@ public class ViewTaskFragment extends SupportFragment
      * @param uri
      *         The {@link Uri} of the task to show.
      */
-    public void loadUri(Uri uri)
+    private void loadUri(Uri uri)
     {
         showFloatingActionButton(false);
 
@@ -369,7 +378,7 @@ public class ViewTaskFragment extends SupportFragment
         {
             /*
              * Unregister the observer for any previously shown task first.
-			 */
+             */
             mAppContext.getContentResolver().unregisterContentObserver(mObserver);
             persistTask();
         }
@@ -380,7 +389,7 @@ public class ViewTaskFragment extends SupportFragment
         {
             /*
              * Create a new ContentSet and load the values for the given Uri. Also register listener and observer for changes in the ContentSet and the Uri.
-			 */
+             */
             mContentSet = new ContentSet(uri);
             mContentSet.addOnChangeListener(this, null, true);
             mAppContext.getContentResolver().registerContentObserver(uri, false, mObserver);
@@ -390,7 +399,7 @@ public class ViewTaskFragment extends SupportFragment
         {
             /*
              * Immediately update the view with the empty task uri, i.e. clear the view.
-			 */
+             */
             mContentSet = null;
             if (mContent != null)
             {
@@ -401,8 +410,8 @@ public class ViewTaskFragment extends SupportFragment
         if ((oldUri == null) != (uri == null))
         {
             /*
-			 * getActivity().invalidateOptionsMenu() doesn't work in Android 2.x so use the compat lib
-			 */
+             * getActivity().invalidateOptionsMenu() doesn't work in Android 2.x so use the compat lib
+             */
             ActivityCompat.invalidateOptionsMenu(getActivity());
         }
 
@@ -456,7 +465,7 @@ public class ViewTaskFragment extends SupportFragment
     {
         if (mContent != null)
         {
-            mContent.post(mUpdateViewRunnable);
+            mContent.post(new SafeFragmentUiRunnable(this, this::updateView));
         }
     }
 
@@ -492,8 +501,8 @@ public class ViewTaskFragment extends SupportFragment
     public void onCreateOptionsMenu(Menu menu, MenuInflater inflater)
     {
         /*
-		 * Don't show any options if we don't have a task to show.
-		 */
+         * Don't show any options if we don't have a task to show.
+         */
         if (mTaskUri != null)
         {
             menu = mToolBar.getMenu();
@@ -549,63 +558,111 @@ public class ViewTaskFragment extends SupportFragment
         if (itemId == R.id.edit_task)
         {
             // open editor for this task
-            mCallback.onEditTask(mTaskUri, mContentSet);
+            mCallback.onTaskEditRequested(mTaskUri, mContentSet);
             return true;
         }
         else if (itemId == R.id.delete_task)
         {
-            new AlertDialog.Builder(getActivity()).setTitle(R.string.confirm_delete_title).setCancelable(true)
-                    .setNegativeButton(android.R.string.cancel, new OnClickListener()
-                    {
-                        @Override
-                        public void onClick(DialogInterface dialog, int which)
+            long originalInstanceId = new Backed<>(TaskFieldAdapters.ORIGINAL_INSTANCE_ID.get(mContentSet), () ->
+                    Long.valueOf(TaskFieldAdapters.INSTANCE_TASK_ID.get(mContentSet))).value();
+            boolean isRecurring = TaskFieldAdapters.IS_RECURRING_INSTANCE.get(mContentSet);
+            AtomicReference<Operation<?>> operation = new AtomicReference<>(
+                    new BulkDelete<>(
+                            new InstanceTable(mTaskUri.getAuthority()),
+                            new IdIn<>(mTaskUri.getLastPathSegment())));
+            AlertDialog.Builder builder = new AlertDialog.Builder(getActivity())
+                    .setCancelable(true)
+                    .setNegativeButton(android.R.string.cancel, (dialog, which) -> {
+                        // nothing to do here
+                    })
+                    .setTitle(isRecurring ? R.string.opentasks_task_details_delete_recurring_task : R.string.confirm_delete_title)
+                    .setPositiveButton(android.R.string.ok, (dialog, which) -> {
+                        if (mContentSet != null)
                         {
-                            // nothing to do here
+                            // TODO: remove the task in a background task
+                            try
+                            {
+                                new BaseTransaction()
+                                        .with(new PresentValues<>(new NullSafe<>(operation.get())))
+                                        .commit(getContext().getContentResolver().acquireContentProviderClient(mTaskUri));
+                            }
+                            catch (RemoteException | OperationApplicationException e)
+                            {
+                                Log.e(ViewTaskFragment.class.getSimpleName(), "Unable to delete task ", e);
+                            }
+
+                            mCallback.onTaskDeleted(mTaskUri);
+                            mTaskUri = null;
                         }
-                    }).setPositiveButton(android.R.string.ok, new OnClickListener()
+                    });
+            if (isRecurring)
             {
-                @Override
-                public void onClick(DialogInterface dialog, int which)
-                {
-                    if (mContentSet != null)
-                    {
-                        // TODO: remove the task in a background task
-                        mContentSet.delete(mAppContext);
-                        mCallback.onDelete(mTaskUri);
-                    }
-                }
-            }).setMessage(R.string.confirm_delete_message).create().show();
+                builder.setSingleChoiceItems(
+                        new CharSequence[] {
+                                getString(R.string.opentasks_task_details_delete_this_task),
+                                getString(R.string.opentasks_task_details_delete_all_tasks)
+                        },
+                        0,
+                        (dialog, which) -> {
+                            switch (which)
+                            {
+                                case 0:
+                                    operation.set(new BulkDelete<>(
+                                            new InstanceTable(mTaskUri.getAuthority()),
+                                            new IdIn<>(mTaskUri.getLastPathSegment())));
+                                case 1:
+                                    operation.set(new BulkDelete<>(
+                                            new TasksTable(mTaskUri.getAuthority()),
+                                            new AnyOf<>(
+                                                    new IdIn<>(originalInstanceId),
+                                                    new EqArg<>(Tasks.ORIGINAL_INSTANCE_ID, originalInstanceId))));
+
+                            }
+                        });
+            }
+            else
+            {
+                builder.setMessage(R.string.confirm_delete_message);
+            }
+            builder.create().show();
+
             return true;
+
         }
         else if (itemId == R.id.complete_task)
+
         {
             completeTask();
             return true;
         }
         else if (itemId == R.id.pin_task)
+
         {
             if (TaskFieldAdapters.PINNED.get(mContentSet))
             {
                 item.setIcon(R.drawable.ic_pin_white_24dp);
-                TaskNotificationHandler.unpinTask(mAppContext, mContentSet);
+                ActionService.startAction(getActivity(), ActionService.ACTION_UNPIN, mTaskUri);
             }
             else
             {
                 item.setIcon(R.drawable.ic_pin_off_white_24dp);
-                TaskNotificationHandler.pinTask(mAppContext, mContentSet);
+                ActionService.startAction(getActivity(), ActionService.ACTION_PIN_TASK, mTaskUri);
             }
             persistTask();
             return true;
         }
         else if (itemId == R.id.opentasks_send_task)
+
         {
             setSendMenuIntent();
             return false;
         }
         else
+
         {
             return super.onOptionsItemSelected(item);
         }
+
     }
 
 
@@ -634,8 +691,7 @@ public class ViewTaskFragment extends SupportFragment
         persistTask();
         Snackbar.make(getActivity().getWindow().getDecorView(), getString(R.string.toast_task_completed, TaskFieldAdapters.TITLE.get(mContentSet)),
                 Snackbar.LENGTH_SHORT).show();
-        // at present we just handle it like deletion, i.e. close the task in phone mode, do nothing in tablet mode
-        mCallback.onDelete(mTaskUri);
+        mCallback.onTaskCompleted(mTaskUri);
         if (mShowFloatingActionButton)
         {
             // hide fab in two pane mode
@@ -651,18 +707,7 @@ public class ViewTaskFragment extends SupportFragment
 
         if (mShowFloatingActionButton && mFloatingActionButton.getVisibility() == View.VISIBLE)
         {
-            // the FAB gets a slightly lighter color to stand out a bit more. If it's too light, we darken it instead.
-            float[] hsv = new float[3];
-            Color.colorToHSV(mListColor, hsv);
-            if (hsv[2] * (1 - hsv[1]) < 0.4)
-            {
-                hsv[2] *= 1.2;
-            }
-            else
-            {
-                hsv[2] /= 1.2;
-            }
-            mFloatingActionButton.setBackgroundTintList(new ColorStateList(new int[][] { new int[] { 0 } }, new int[] { Color.HSVToColor(hsv) }));
+            mFloatingActionButton.setBackgroundTintList(ColorStateList.valueOf(new AdjustedForFab(mListColor).argb()));
         }
     }
 
@@ -674,12 +719,9 @@ public class ViewTaskFragment extends SupportFragment
         if (contentSet.containsKey(Tasks.ACCOUNT_TYPE))
         {
             mListColor = TaskFieldAdapters.LIST_COLOR.get(contentSet);
-            ((Callback) getActivity()).updateColor(mListColor);
+            ((Callback) getActivity()).onListColorLoaded(new ValueColor(mListColor));
 
-            if (VERSION.SDK_INT >= 11)
-            {
-                updateColor();
-            }
+            updateColor();
 
             Activity activity = getActivity();
             int newStatus = TaskFieldAdapters.STATUS.get(contentSet);
@@ -730,7 +772,7 @@ public class ViewTaskFragment extends SupportFragment
         @Override
         public void onChange(boolean selfChange)
         {
-            if (mContentSet != null)
+            if (mContentSet != null && mTaskUri != null)
             {
                 // reload the task
                 mContentSet.update(mAppContext, CONTENT_VALUE_MAPPER);
@@ -767,7 +809,7 @@ public class ViewTaskFragment extends SupportFragment
 
         handleAlphaOnTitle(percentage);
 
-        if (mIsTheTitleContainerVisible && Build.VERSION.SDK_INT >= 11)
+        if (mIsTheTitleContainerVisible)
         {
             mAppBar.findViewById(R.id.toolbar_content).setAlpha(1 - percentage);
         }
@@ -812,7 +854,7 @@ public class ViewTaskFragment extends SupportFragment
      * @param activty
      *         an {@link AppCompatActivity}.
      */
-    public void setupToolbarAsActionbar(android.support.v7.app.AppCompatActivity activty)
+    public void setupToolbarAsActionbar(androidx.appcompat.app.AppCompatActivity activty)
     {
         if (mToolBar == null)
         {
@@ -820,10 +862,7 @@ public class ViewTaskFragment extends SupportFragment
         }
 
         activty.setSupportActionBar(mToolBar);
-        if (android.os.Build.VERSION.SDK_INT >= 11)
-        {
-            activty.getSupportActionBar().setDisplayHomeAsUpEnabled(true);
-        }
+        activty.getSupportActionBar().setDisplayHomeAsUpEnabled(true);
     }
 
 
@@ -841,7 +880,7 @@ public class ViewTaskFragment extends SupportFragment
         {
             p.setAnchorId(R.id.appbar);
             mFloatingActionButton.setLayoutParams(p);
-            mFloatingActionButton.setVisibility(View.VISIBLE);
+            mFloatingActionButton.show();
             // make sure the FAB has the right color
             updateColor();
         }
@@ -849,7 +888,7 @@ public class ViewTaskFragment extends SupportFragment
         {
             p.setAnchorId(View.NO_ID);
             mFloatingActionButton.setLayoutParams(p);
-            mFloatingActionButton.setVisibility(View.GONE);
+            mFloatingActionButton.hide();
         }
     }
 }

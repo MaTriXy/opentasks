@@ -21,6 +21,8 @@ import org.dmfs.android.contentpal.tables.BaseTable;
 import org.dmfs.android.contentpal.tables.DelegatingTable;
 import org.dmfs.tasks.contract.TaskContract;
 
+import androidx.annotation.NonNull;
+
 
 /**
  * {@link Table} for {@link TaskContract.Properties}.
@@ -29,8 +31,8 @@ import org.dmfs.tasks.contract.TaskContract;
  */
 public final class PropertiesTable extends DelegatingTable<TaskContract.Properties>
 {
-    public PropertiesTable(String authority)
+    public PropertiesTable(@NonNull String authority)
     {
-        super(new BaseTable<TaskContract.Properties>(TaskContract.Properties.getContentUri(authority)));
+        super(new BaseTable<>(TaskContract.Properties.getContentUri(authority)));
     }
 }

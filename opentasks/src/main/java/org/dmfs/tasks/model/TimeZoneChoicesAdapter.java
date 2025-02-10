@@ -62,9 +62,9 @@ public class TimeZoneChoicesAdapter implements IChoicesAdapter
         String[] titles = resources.getStringArray(R.array.timezone_labels);
         String[] ids = resources.getStringArray(R.array.timezone_values);
 
-		/*
+        /*
          * Build time zone lists and maps.
-		 */
+         */
         for (int i = 0; i < ids.length; ++i)
         {
             String id = ids[i];
@@ -196,10 +196,7 @@ public class TimeZoneChoicesAdapter implements IChoicesAdapter
         long absmillis = (millis < 0) ? -millis : millis;
         int minutes = (int) ((absmillis / (1000 * 60)) % 60);
         int hours = (int) ((absmillis / (1000 * 60 * 60)) % 24);
-        StringBuilder builder = new StringBuilder("(GMT");
-        builder.append((millis >= 0) ? '+' : '-');
-        builder.append(String.format("%02d:%02d", hours, minutes)).append(") ");
-        return builder.toString();
+        return String.format("(GMT%c%02d:%02d) ", millis >= 0 ? '+' : '-', hours, minutes);
     }
 
 

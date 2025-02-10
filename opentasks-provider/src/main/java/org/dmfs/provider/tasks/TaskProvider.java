@@ -19,7 +19,6 @@ package org.dmfs.provider.tasks;
 import android.accounts.Account;
 import android.accounts.AccountManager;
 import android.accounts.OnAccountsUpdateListener;
-import android.annotation.TargetApi;
 import android.content.ContentResolver;
 import android.content.ContentUris;
 import android.content.ContentValues;
@@ -37,27 +36,34 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.text.TextUtils;
+import android.util.Log;
 
+import org.dmfs.iterables.EmptyIterable;
 import org.dmfs.provider.tasks.TaskDatabaseHelper.OnDatabaseOperationListener;
 import org.dmfs.provider.tasks.TaskDatabaseHelper.Tables;
 import org.dmfs.provider.tasks.handler.PropertyHandler;
 import org.dmfs.provider.tasks.handler.PropertyHandlerFactory;
 import org.dmfs.provider.tasks.model.ContentValuesListAdapter;
 import org.dmfs.provider.tasks.model.ContentValuesTaskAdapter;
+import org.dmfs.provider.tasks.model.CursorContentValuesInstanceAdapter;
 import org.dmfs.provider.tasks.model.CursorContentValuesListAdapter;
 import org.dmfs.provider.tasks.model.CursorContentValuesTaskAdapter;
+import org.dmfs.provider.tasks.model.InstanceAdapter;
 import org.dmfs.provider.tasks.model.ListAdapter;
 import org.dmfs.provider.tasks.model.TaskAdapter;
 import org.dmfs.provider.tasks.processors.EntityProcessor;
-import org.dmfs.provider.tasks.processors.lists.ListExecutionProcessor;
-import org.dmfs.provider.tasks.processors.lists.ListValidatorProcessor;
-import org.dmfs.provider.tasks.processors.tasks.AutoUpdateProcessor;
-import org.dmfs.provider.tasks.processors.tasks.ChangeListProcessor;
-import org.dmfs.provider.tasks.processors.tasks.FtsProcessor;
-import org.dmfs.provider.tasks.processors.tasks.RelationProcessor;
-import org.dmfs.provider.tasks.processors.tasks.TaskExecutionProcessor;
-import org.dmfs.provider.tasks.processors.tasks.TaskInstancesProcessor;
-import org.dmfs.provider.tasks.processors.tasks.TaskValidatorProcessor;
+import org.dmfs.provider.tasks.processors.instances.Detaching;
+import org.dmfs.provider.tasks.processors.instances.TaskValueDelegate;
+import org.dmfs.provider.tasks.processors.lists.ListCommitProcessor;
+import org.dmfs.provider.tasks.processors.tasks.AutoCompleting;
+import org.dmfs.provider.tasks.processors.tasks.Instantiating;
+import org.dmfs.provider.tasks.processors.tasks.Moving;
+import org.dmfs.provider.tasks.processors.tasks.Originating;
+import org.dmfs.provider.tasks.processors.tasks.Relating;
+import org.dmfs.provider.tasks.processors.tasks.Reparenting;
+import org.dmfs.provider.tasks.processors.tasks.Searchable;
+import org.dmfs.provider.tasks.processors.tasks.TaskCommitProcessor;
+import org.dmfs.provider.tasks.processors.tasks.Validating;
 import org.dmfs.tasks.contract.TaskContract;
 import org.dmfs.tasks.contract.TaskContract.Alarms;
 import org.dmfs.tasks.contract.TaskContract.Categories;
@@ -72,12 +78,12 @@ import org.dmfs.tasks.contract.TaskContract.TaskListSyncColumns;
 import org.dmfs.tasks.contract.TaskContract.TaskLists;
 import org.dmfs.tasks.contract.TaskContract.Tasks;
 
-import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashSet;
-import java.util.List;
-import java.util.Map.Entry;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 
 /**
@@ -116,16 +122,22 @@ public final class TaskProvider extends SQLiteContentProvider implements OnAccou
     private static final int OPERATIONS = 100000;
 
     private final static Set<String> TASK_LIST_SYNC_COLUMNS = new HashSet<String>(Arrays.asList(TaskLists.SYNC_ADAPTER_COLUMNS));
+    private static final String TAG = "TaskProvider";
 
     /**
-     * A list of {@link TaskProcessor}s to execute when doing operations on the tasks table.
+     * A list of {@link EntityProcessor}s to execute when doing operations on the instances table.
      */
-    private List<EntityProcessor<TaskAdapter>> mTaskProcessors = new ArrayList<EntityProcessor<TaskAdapter>>(16);
+    private EntityProcessor<InstanceAdapter> mInstanceProcessorChain;
 
     /**
-     * A list of {@link ListProcessor}s to execute when doing operations on the task lists table.
+     * A list of {@link EntityProcessor}s to execute when doing operations on the tasks table.
      */
-    private List<EntityProcessor<ListAdapter>> mListProcessors = new ArrayList<EntityProcessor<ListAdapter>>(8);
+    private EntityProcessor<TaskAdapter> mTaskProcessorChain;
+
+    /**
+     * A list of {@link EntityProcessor}s to execute when doing operations on the task lists table.
+     */
+    private EntityProcessor<ListAdapter> mListProcessorChain;
 
     /**
      * Our authority.
@@ -143,9 +155,30 @@ public final class TaskProvider extends SQLiteContentProvider implements OnAccou
     Handler mAsyncHandler;
 
     /**
-     * An {@link ProviderOperationsLog} to track all changes within a transaction.
+     * Boolean to track if there are changes within a transaction.
+     * <p>
+     * This can be shared by multiple threads, hence the {@link AtomicBoolean}.
      */
-    private ProviderOperationsLog mOperationsLog = new ProviderOperationsLog();
+    private AtomicBoolean mChanged = new AtomicBoolean(false);
+
+    /**
+     * This is a per transaction/thread flag which indicates whether new lists with an unknown account have been added.
+     * If this holds true at the end of a transaction a window should be shown to ask the user for access to that account.
+     */
+    private ThreadLocal<Boolean> mStaleListCreated = new ThreadLocal<>();
+
+    /**
+     * The currently known accounts. This may be accessed from various threads, hence the AtomicReference.
+     * By statring with an empty set, we can always guarantee a non-null reference.
+     */
+    private AtomicReference<Set<Account>> mAccountCache = new AtomicReference<>(Collections.emptySet());
+
+
+    public TaskProvider()
+    {
+        // for now we don't have anything specific to execute before the transaction ends.
+        super(EmptyIterable.instance());
+    }
 
 
     @Override
@@ -153,16 +186,13 @@ public final class TaskProvider extends SQLiteContentProvider implements OnAccou
     {
         mAuthority = AuthorityUtil.taskAuthority(getContext());
 
-        mTaskProcessors.add(new TaskValidatorProcessor());
-        mTaskProcessors.add(new AutoUpdateProcessor());
-        mTaskProcessors.add(new RelationProcessor());
-        mTaskProcessors.add(new TaskInstancesProcessor());
-        mTaskProcessors.add(new FtsProcessor());
-        mTaskProcessors.add(new ChangeListProcessor());
-        mTaskProcessors.add(new TaskExecutionProcessor());
+        mTaskProcessorChain = new Validating(
+                new AutoCompleting(new Relating(new Reparenting(new Instantiating(new Searchable(new Moving(new Originating(new TaskCommitProcessor()))))))));
 
-        mListProcessors.add(new ListValidatorProcessor());
-        mListProcessors.add(new ListExecutionProcessor());
+        mListProcessorChain = new org.dmfs.provider.tasks.processors.lists.Validating(new ListCommitProcessor());
+
+        mInstanceProcessorChain = new org.dmfs.provider.tasks.processors.instances.Validating(
+                new Detaching(new TaskValueDelegate(mTaskProcessorChain), mTaskProcessorChain));
 
         mUriMatcher = new UriMatcher(UriMatcher.NO_MATCH);
         mUriMatcher.addURI(mAuthority, TaskContract.TaskLists.CONTENT_URI_PATH, LISTS);
@@ -486,7 +516,7 @@ public final class TaskProvider extends SQLiteContentProvider implements OnAccou
         {
             if (sb.length() > 0)
             {
-                sb.append("AND ( ").append(selection).append(" ) ");
+                sb.append(" AND ( ").append(selection).append(" ) ");
             }
             else
             {
@@ -596,7 +626,7 @@ public final class TaskProvider extends SQLiteContentProvider implements OnAccou
                 }
                 else
                 {
-                    sqlBuilder.setTables(Tables.INSTANCE_VIEW);
+                    sqlBuilder.setTables(Tables.INSTANCE_CLIENT_VIEW);
                 }
                 if (!isSyncAdapter)
                 {
@@ -619,7 +649,7 @@ public final class TaskProvider extends SQLiteContentProvider implements OnAccou
                 }
                 else
                 {
-                    sqlBuilder.setTables(Tables.INSTANCE_VIEW);
+                    sqlBuilder.setTables(Tables.INSTANCE_CLIENT_VIEW);
                 }
                 selectId(sqlBuilder, Instances._ID, uri);
                 if (!isSyncAdapter)
@@ -715,7 +745,7 @@ public final class TaskProvider extends SQLiteContentProvider implements OnAccou
             }
             /*
              * Deleting task lists is only allowed to sync adapters. They must provide ACCOUNT_NAME and ACCOUNT_TYPE.
-			 */
+             */
             case LIST_ID:
                 // add _id to selection and fall through
                 selection = updateSelection(selectId(uri), selection);
@@ -729,7 +759,7 @@ public final class TaskProvider extends SQLiteContentProvider implements OnAccou
                     }
                 }
 
-                // iterate over all lists that match the selection. We iterate "manually" to execute any processors before or after deletion.
+                // iterate over all lists that match the selection
                 final Cursor cursor = db.query(Tables.LISTS, null, selection, selectionArgs, null, null, null, null);
 
                 try
@@ -738,7 +768,8 @@ public final class TaskProvider extends SQLiteContentProvider implements OnAccou
                     {
                         final ListAdapter list = new CursorContentValuesListAdapter(ListAdapter._ID.getFrom(cursor), cursor, new ContentValues());
 
-                        ProviderOperation.DELETE.execute(db, mListProcessors, list, isSyncAdapter, mOperationsLog, mAuthority);
+                        mListProcessorChain.delete(db, list, isSyncAdapter);
+                        mChanged.set(true);
                         count++;
                     }
                 }
@@ -752,7 +783,7 @@ public final class TaskProvider extends SQLiteContentProvider implements OnAccou
             }
             /*
              * Task won't be removed, just marked as deleted if the caller isn't a sync adapter. Sync adapters can remove tasks immediately.
-			 */
+             */
             case TASK_ID:
                 // add id to selection and fall through
                 selection = updateSelection(selectId(uri), selection);
@@ -769,7 +800,7 @@ public final class TaskProvider extends SQLiteContentProvider implements OnAccou
                     }
                 }
 
-                // iterate over all tasks that match the selection. We iterate "manually" to execute any processors before or after deletion.
+                // iterate over all tasks that match the selection
                 final Cursor cursor = db.query(Tables.TASKS_VIEW, null, selection, selectionArgs, null, null, null, null);
 
                 try
@@ -778,7 +809,9 @@ public final class TaskProvider extends SQLiteContentProvider implements OnAccou
                     {
                         final TaskAdapter task = new CursorContentValuesTaskAdapter(cursor, new ContentValues());
 
-                        ProviderOperation.DELETE.execute(db, mTaskProcessors, task, isSyncAdapter, mOperationsLog, mAuthority);
+                        mTaskProcessorChain.delete(db, task, isSyncAdapter);
+
+                        mChanged.set(true);
                         count++;
                     }
                 }
@@ -789,6 +822,27 @@ public final class TaskProvider extends SQLiteContentProvider implements OnAccou
 
                 break;
             }
+
+            case INSTANCE_ID:
+                // add id to selection and fall through
+                selection = updateSelection(selectId(uri), selection);
+
+            case INSTANCES:
+            {
+                // iterate over all instances that match the selection
+                try (Cursor cursor = db.query(Tables.INSTANCE_VIEW, null, selection, selectionArgs, null, null, null, null))
+                {
+                    while (cursor.moveToNext())
+                    {
+                        mInstanceProcessorChain.delete(db, new CursorContentValuesInstanceAdapter(cursor, new ContentValues()), isSyncAdapter);
+                        mChanged.set(true);
+                        count++;
+                    }
+                }
+
+                break;
+            }
+
             case ALARM_ID:
                 // add id to selection and fall through
                 selection = updateSelection(selectId(uri), selection);
@@ -846,8 +900,8 @@ public final class TaskProvider extends SQLiteContentProvider implements OnAccou
     @Override
     public Uri insertInTransaction(final SQLiteDatabase db, Uri uri, final ContentValues values, final boolean isSyncAdapter)
     {
-        long rowId = 0;
-        Uri result_uri = null;
+        long rowId;
+        Uri result_uri;
 
         String accountName = getAccountName(uri);
         String accountType = getAccountType(uri);
@@ -876,17 +930,28 @@ public final class TaskProvider extends SQLiteContentProvider implements OnAccou
                 list.set(ListAdapter.ACCOUNT_NAME, accountName);
                 list.set(ListAdapter.ACCOUNT_TYPE, accountType);
 
-                ProviderOperation.INSERT.execute(db, mListProcessors, list, isSyncAdapter, mOperationsLog, mAuthority);
+                mListProcessorChain.insert(db, list, isSyncAdapter);
+                mChanged.set(true);
 
                 rowId = list.id();
                 result_uri = TaskContract.TaskLists.getContentUri(mAuthority);
-
+                // if the account is unknown we need to ask the user
+                if (Build.VERSION.SDK_INT >= 26 &&
+                        !TaskContract.LOCAL_ACCOUNT_TYPE.equals(accountType) &&
+                        !mAccountCache.get().contains(new Account(accountName, accountType)))
+                {
+                    // store the fact that we have an unknown account in this transaction
+                    mStaleListCreated.set(true);
+                    Log.d(TAG, String.format("List with unknown account %s inserted.", new Account(accountName, accountType)));
+                }
                 break;
             }
             case TASKS:
                 final TaskAdapter task = new ContentValuesTaskAdapter(values);
 
-                ProviderOperation.INSERT.execute(db, mTaskProcessors, task, isSyncAdapter, mOperationsLog, mAuthority);
+                mTaskProcessorChain.insert(db, task, isSyncAdapter);
+
+                mChanged.set(true);
 
                 rowId = task.id();
                 result_uri = TaskContract.Tasks.getContentUri(mAuthority);
@@ -896,6 +961,20 @@ public final class TaskProvider extends SQLiteContentProvider implements OnAccou
 
                 break;
 
+            // inserting instances is currently disabled because we only expand one instance,
+            // so even though a new task (exception) would be created, no instance might show up
+            // we need to resolve this discrepancy. Until then this feature remains disabled.
+//            case INSTANCES:
+//            {
+//                InstanceAdapter instance = mInstanceProcessorChain.insert(db, new ContentValuesInstanceAdapter(values), isSyncAdapter);
+//                rowId = instance.id();
+//                result_uri = TaskContract.Instances.getContentUri(mAuthority);
+//
+//                postNotifyUri(Instances.getContentUri(mAuthority));
+//                postNotifyUri(Tasks.getContentUri(mAuthority));
+//
+//                break;
+//            }
             case PROPERTIES:
                 String mimetype = values.getAsString(Properties.MIMETYPE);
 
@@ -940,12 +1019,12 @@ public final class TaskProvider extends SQLiteContentProvider implements OnAccou
     }
 
 
-    @TargetApi(Build.VERSION_CODES.HONEYCOMB)
     @Override
     public int updateInTransaction(final SQLiteDatabase db, Uri uri, final ContentValues values, String selection, String[] selectionArgs,
                                    final boolean isSyncAdapter)
     {
         int count = 0;
+        boolean dataChanged = false;
         switch (mUriMatcher.match(uri))
         {
             case SYNCSTATE_ID:
@@ -986,7 +1065,7 @@ public final class TaskProvider extends SQLiteContentProvider implements OnAccou
 
             case LISTS:
             {
-                // iterate over all task lists that match the selection. We iterate "manually" to execute any processors before or after insert.
+                // iterate over all task lists that match the selection
                 final Cursor cursor = db.query(Tables.LISTS, null, selection, selectionArgs, null, null, null, null);
 
                 int idCol = cursor.getColumnIndex(TaskContract.TaskLists._ID);
@@ -1001,7 +1080,12 @@ public final class TaskProvider extends SQLiteContentProvider implements OnAccou
                         // we need this, because the processors may change the values
                         final ListAdapter list = new CursorContentValuesListAdapter(listId, cursor, cursor.getCount() > 1 ? new ContentValues(values) : values);
 
-                        ProviderOperation.UPDATE.execute(db, mListProcessors, list, isSyncAdapter, mOperationsLog, mAuthority);
+                        if (list.hasUpdates())
+                        {
+                            mListProcessorChain.update(db, list, isSyncAdapter);
+                            dataChanged |= !TASK_LIST_SYNC_COLUMNS.containsAll(values.keySet());
+                        }
+                        // note we still count the row even if no update was necessary
                         count++;
                     }
                 }
@@ -1017,7 +1101,7 @@ public final class TaskProvider extends SQLiteContentProvider implements OnAccou
 
             case TASKS:
             {
-                // iterate over all tasks that match the selection. We iterate "manually" to execute any processors before or after insert.
+                // iterate over all tasks that match the selection
                 final Cursor cursor = db.query(Tables.TASKS_VIEW, null, selection, selectionArgs, null, null, null, null);
 
                 try
@@ -1028,7 +1112,12 @@ public final class TaskProvider extends SQLiteContentProvider implements OnAccou
                         // we need this, because the processors may change the values
                         final TaskAdapter task = new CursorContentValuesTaskAdapter(cursor, cursor.getCount() > 1 ? new ContentValues(values) : values);
 
-                        ProviderOperation.UPDATE.execute(db, mTaskProcessors, task, isSyncAdapter, mOperationsLog, mAuthority);
+                        if (task.hasUpdates())
+                        {
+                            mTaskProcessorChain.update(db, task, isSyncAdapter);
+                            dataChanged |= !TASK_LIST_SYNC_COLUMNS.containsAll(values.keySet());
+                        }
+                        // note we still count the row even if no update was necessary
                         count++;
                     }
                 }
@@ -1037,7 +1126,7 @@ public final class TaskProvider extends SQLiteContentProvider implements OnAccou
                     cursor.close();
                 }
 
-                if (count > 0)
+                if (dataChanged)
                 {
                     postNotifyUri(Instances.getContentUri(mAuthority));
                     postNotifyUri(Tasks.getContentUri(mAuthority));
@@ -1045,6 +1134,40 @@ public final class TaskProvider extends SQLiteContentProvider implements OnAccou
                 break;
             }
 
+            case INSTANCE_ID:
+                // update selection and fall through
+                selection = updateSelection(selectId(uri), selection);
+
+            case INSTANCES:
+            {
+                // iterate over all instances that match the selection
+
+                try (Cursor cursor = db.query(Tables.INSTANCE_VIEW, null, selection, selectionArgs, null, null, null, null))
+                {
+                    while (cursor.moveToNext())
+                    {
+                        // clone task values if we have more than one task to update
+                        // we need this, because the processors may change the values
+                        final InstanceAdapter instance = new CursorContentValuesInstanceAdapter(cursor,
+                                cursor.getCount() > 1 ? new ContentValues(values) : values);
+
+                        if (instance.hasUpdates())
+                        {
+                            mInstanceProcessorChain.update(db, instance, isSyncAdapter);
+                            dataChanged = true;
+                        }
+                        // note we still count the row even if no update was necessary
+                        count++;
+                    }
+                }
+
+                if (dataChanged)
+                {
+                    postNotifyUri(Instances.getContentUri(mAuthority));
+                    postNotifyUri(Tasks.getContentUri(mAuthority));
+                }
+                break;
+            }
             case PROPERTY_ID:
                 selection = updateSelection(selectPropertyId(uri), selection);
 
@@ -1112,25 +1235,11 @@ public final class TaskProvider extends SQLiteContentProvider implements OnAccou
                 operation.run(getContext(), mAsyncHandler, uri, db, values);
         }
 
-        // get the keys in values
-        Set<String> keys;
-        if (android.os.Build.VERSION.SDK_INT < 11)
-        {
-            keys = new HashSet<String>();
-            for (Entry<String, Object> entry : values.valueSet())
-            {
-                keys.add(entry.getKey());
-            }
-        }
-        else
-        {
-            keys = values.keySet();
-        }
-
-        if (!TASK_LIST_SYNC_COLUMNS.containsAll(keys))
+        if (dataChanged)
         {
             // send notifications, because non-sync columns have been updated
             postNotifyUri(uri);
+            mChanged.set(true);
         }
 
         return count;
@@ -1216,6 +1325,8 @@ public final class TaskProvider extends SQLiteContentProvider implements OnAccou
                 return ContentResolver.CURSOR_ITEM_BASE_TYPE + "/org.dmfs.tasks." + Tasks.CONTENT_URI_PATH;
             case INSTANCES:
                 return ContentResolver.CURSOR_DIR_BASE_TYPE + "/org.dmfs.tasks." + Instances.CONTENT_URI_PATH;
+            case INSTANCE_ID:
+                return ContentResolver.CURSOR_ITEM_BASE_TYPE + "/org.dmfs.tasks." + Instances.CONTENT_URI_PATH;
             default:
                 throw new IllegalArgumentException("Unsupported URI: " + uri);
         }
@@ -1226,14 +1337,18 @@ public final class TaskProvider extends SQLiteContentProvider implements OnAccou
     protected void onEndTransaction(boolean callerIsSyncAdapter)
     {
         super.onEndTransaction(callerIsSyncAdapter);
-        Intent providerChangedIntent = new Intent(Intent.ACTION_PROVIDER_CHANGED, TaskContract.getContentUri(mAuthority));
-        if (!mOperationsLog.isEmpty())
+        if (mChanged.compareAndSet(true, false))
         {
             updateNotifications();
+            Utils.sendActionProviderChangedBroadCast(getContext(), mAuthority);
         }
-        // add the change log to the broadcast
-        providerChangedIntent.putExtras(mOperationsLog.toBundle(true));
-        getContext().sendBroadcast(providerChangedIntent);
+
+        if (Boolean.TRUE.equals(mStaleListCreated.get()))
+        {
+            // notify UI about the stale lists, it's up the UI to deal with this, either by showing a notification or an instant popup.
+            Intent visbilityRequest = new Intent("org.dmfs.tasks.action.STALE_LIST_BROADCAST").setPackage(getContext().getPackageName());
+            getContext().sendBroadcast(visbilityRequest);
+        }
     }
 
 
@@ -1252,6 +1367,8 @@ public final class TaskProvider extends SQLiteContentProvider implements OnAccou
         // notify listeners that the database has been created
         Intent dbInitializedIntent = new Intent(TaskContract.ACTION_DATABASE_INITIALIZED);
         dbInitializedIntent.setDataAndType(TaskContract.getContentUri(mAuthority), TaskContract.MIMETYPE_AUTHORITY);
+        // Android SDK 26 doesn't allow us to send implicit broadcasts, this particular brodcast is only for internal use, so just make it explicit by setting our package name
+        dbInitializedIntent.setPackage(getContext().getPackageName());
         getContext().sendBroadcast(dbInitializedIntent);
     }
 
@@ -1261,14 +1378,7 @@ public final class TaskProvider extends SQLiteContentProvider implements OnAccou
     {
         if (oldVersion < 15)
         {
-            mAsyncHandler.post(new Runnable()
-            {
-                @Override
-                public void run()
-                {
-                    ContentOperation.UPDATE_TIMEZONE.fire(getContext(), null);
-                }
-            });
+            mAsyncHandler.post(() -> ContentOperation.UPDATE_TIMEZONE.fire(getContext(), null));
         }
     }
 
@@ -1283,6 +1393,8 @@ public final class TaskProvider extends SQLiteContentProvider implements OnAccou
     @Override
     public void onAccountsUpdated(Account[] accounts)
     {
+        // cache the known accounts so we can check whether we know accounts for which new lists are added
+        mAccountCache.set(new HashSet<>(Arrays.asList(accounts)));
         // TODO: we probably can move the cleanup code here and get rid of the Utils class
         Utils.cleanUpLists(getContext(), getDatabaseHelper().getWritableDatabase(), accounts, mAuthority);
     }

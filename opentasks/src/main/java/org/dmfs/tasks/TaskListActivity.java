@@ -17,40 +17,30 @@
 package org.dmfs.tasks;
 
 import android.annotation.SuppressLint;
-import android.annotation.TargetApi;
 import android.app.SearchManager;
 import android.content.Context;
 import android.content.Intent;
-import android.graphics.Color;
-import android.graphics.drawable.ColorDrawable;
+import android.content.SharedPreferences;
+import android.content.res.Resources;
 import android.net.Uri;
 import android.os.Build;
-import android.os.Build.VERSION;
 import android.os.Bundle;
 import android.os.Handler;
-import android.support.design.widget.AppBarLayout;
-import android.support.design.widget.CollapsingToolbarLayout;
-import android.support.design.widget.FloatingActionButton;
-import android.support.design.widget.TabLayout;
-import android.support.v4.app.Fragment;
-import android.support.v4.app.FragmentManager;
-import android.support.v4.view.MenuItemCompat;
-import android.support.v4.view.MenuItemCompat.OnActionExpandListener;
-import android.support.v4.view.ViewPager;
-import android.support.v4.view.ViewPager.OnPageChangeListener;
-import android.support.v7.widget.SearchView;
-import android.support.v7.widget.SearchView.OnQueryTextListener;
-import android.support.v7.widget.Toolbar;
-import android.util.Log;
 import android.view.Menu;
 import android.view.MenuInflater;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.View.OnClickListener;
-import android.view.Window;
-import android.view.WindowManager;
 
+import com.google.android.material.appbar.AppBarLayout;
+import com.google.android.material.floatingactionbutton.FloatingActionButton;
+import com.google.android.material.tabs.TabLayout;
+
+import org.dmfs.android.bolts.color.Color;
+import org.dmfs.android.bolts.color.colors.PrimaryColor;
+import org.dmfs.android.bolts.color.elementary.ValueColor;
 import org.dmfs.android.retentionmagic.annotations.Retain;
+import org.dmfs.jems.single.adapters.Unchecked;
 import org.dmfs.provider.tasks.AuthorityUtil;
 import org.dmfs.tasks.contract.TaskContract.Tasks;
 import org.dmfs.tasks.groupings.AbstractGroupingFactory;
@@ -64,10 +54,20 @@ import org.dmfs.tasks.model.ContentSet;
 import org.dmfs.tasks.utils.BaseActivity;
 import org.dmfs.tasks.utils.ExpandableGroupDescriptor;
 import org.dmfs.tasks.utils.SearchHistoryHelper;
-import org.dmfs.xmlobjects.pull.XmlObjectPullParserException;
-import org.xmlpull.v1.XmlPullParserException;
 
-import java.io.IOException;
+import androidx.annotation.ColorInt;
+import androidx.annotation.NonNull;
+import androidx.appcompat.app.AppCompatDelegate;
+import androidx.appcompat.widget.SearchView;
+import androidx.appcompat.widget.SearchView.OnQueryTextListener;
+import androidx.appcompat.widget.Toolbar;
+import androidx.core.view.MenuItemCompat;
+import androidx.core.view.MenuItemCompat.OnActionExpandListener;
+import androidx.fragment.app.Fragment;
+import androidx.fragment.app.FragmentManager;
+import androidx.preference.PreferenceManager;
+import androidx.viewpager.widget.ViewPager;
+import androidx.viewpager.widget.ViewPager.OnPageChangeListener;
 
 
 /**
@@ -98,16 +98,15 @@ public class TaskListActivity extends BaseActivity implements TaskListFragment.C
      **/
     public static final String EXTRA_FORCE_LIST_SELECTION = "org.dmfs.tasks.FORCE_LIST_SELECTION";
 
-    private static final String TAG = "TaskListActivity";
-
     private final static int REQUEST_CODE_NEW_TASK = 2924;
+    private final static int REQUEST_CODE_PREFS = 2925;
 
     /**
      * The time to wait for a new key before updating the search view.
      */
     private final static int SEARCH_UPDATE_DELAY = 400; // ms
 
-    private final static String DETAIL_FRAGMENT_TAG = "taskListActivity.ViewTaskFragment";
+    private final static String DETAILS_FRAGMENT_TAG = "details_fragment_tag";
 
     /**
      * Array of {@link ExpandableGroupDescriptor}s.
@@ -123,6 +122,14 @@ public class TaskListActivity extends BaseActivity implements TaskListFragment.C
 
     @Retain(permanent = true)
     private int mCurrentPageId;
+
+    /**
+     * The last used color for the toolbars. {@link android.graphics.Color#TRANSPARENT} represents the absent value.
+     * (Used upon start/rotation until the actually selected task with its color is loaded, to avoid flashing up primary color.)
+     */
+    @Retain(permanent = true)
+    @ColorInt
+    private int mLastUsedColor = android.graphics.Color.TRANSPARENT;
 
     /**
      * The current pager position
@@ -144,12 +151,6 @@ public class TaskListActivity extends BaseActivity implements TaskListFragment.C
     private boolean mAutoExpandSearchView = false;
 
     /**
-     * Indicates that the activity switched to detail view due to rotation.
-     **/
-    @Retain
-    private boolean mSwitchedToDetail = false;
-
-    /**
      * The Uri of the task to display/highlight in the list view.
      **/
     @Retain
@@ -159,12 +160,6 @@ public class TaskListActivity extends BaseActivity implements TaskListFragment.C
      * The Uri of the task to display/highlight in the list view coming from the widget.
      **/
     private Uri mSelectedTaskUriOnLaunch;
-
-    /**
-     * Indicates to display the two pane layout with details
-     **/
-    @Retain
-    private boolean mShouldShowDetails = false;
 
     /**
      * Indicates to show ViewTaskActivity when rotating to single pane.
@@ -182,20 +177,25 @@ public class TaskListActivity extends BaseActivity implements TaskListFragment.C
      **/
     private boolean mTransientState = false;
 
-    private CollapsingToolbarLayout mToolbarLayout;
-
     private AppBarLayout mAppBarLayout;
 
     private FloatingActionButton mFloatingActionButton;
+    private SharedPreferences mPrefs;
 
 
-    @SuppressLint("NewApi")
-    @TargetApi(Build.VERSION_CODES.ICE_CREAM_SANDWICH)
     @Override
     protected void onCreate(Bundle savedInstanceState)
     {
-        Log.d(TAG, "onCreate called again");
+        mPrefs = PreferenceManager.getDefaultSharedPreferences(this);
+
+        updateTheme();
         super.onCreate(savedInstanceState);
+
+        if (mLastUsedColor == android.graphics.Color.TRANSPARENT)
+        {
+            // no saved color, use the primary color
+            mLastUsedColor = new PrimaryColor(this).argb();
+        }
 
         // check for single pane activity change
         mTwoPane = getResources().getBoolean(R.bool.has_two_panes);
@@ -204,19 +204,19 @@ public class TaskListActivity extends BaseActivity implements TaskListFragment.C
 
         if (mSelectedTaskUri != null)
         {
-            if (mShouldShowDetails && mShouldSwitchToDetail)
+            if (!mTwoPane && mShouldSwitchToDetail)
             {
                 Intent viewTaskIntent = new Intent(Intent.ACTION_VIEW);
                 viewTaskIntent.setData(mSelectedTaskUri);
+                viewTaskIntent.putExtra(ViewTaskActivity.EXTRA_COLOR, mLastUsedColor);
                 startActivity(viewTaskIntent);
-                mSwitchedToDetail = true;
                 mShouldSwitchToDetail = false;
                 mTransientState = true;
             }
         }
         else
         {
-            mShouldShowDetails = false;
+            mShouldSwitchToDetail = false;
         }
 
         setContentView(R.layout.activity_task_list);
@@ -229,21 +229,18 @@ public class TaskListActivity extends BaseActivity implements TaskListFragment.C
 
         if (findViewById(R.id.task_detail_container) != null)
         {
-            // In two-pane mode, list items should be given the
-            // 'activated' state when touched.
-
-            // get list fragment
-            // mTaskListFrag = (TaskListFragment) getSupportFragmentManager().findFragmentById(R.id.task_list);
-            // mTaskListFrag.setListViewScrollbarPositionLeft(true);
-
-            // mTaskListFrag.setActivateOnItemClick(true);
-
-            loadTaskDetailFragment(mSelectedTaskUri);
+            /* Note: 'savedInstanceState == null' is not used here as would be usual with fragments, because of the case of when rotation means
+            switching from one-pane mode to two-pane mode on small tablets and the fragment has to added. To cover that case as well, the fragment is always replaced. */
+            replaceTaskDetailsFragment(
+                    mSelectedTaskUri == null ?
+                            EmptyTaskFragment.newInstance(new ValueColor(mLastUsedColor))
+                            : ViewTaskFragment.newInstance(mSelectedTaskUri, new ValueColor(mLastUsedColor)));
         }
         else
         {
+            // When rotating the screen means switching from two-pane to single-pane mode (on small tablets), remove the obsolete fragment that gets recreated by FragmentManager:
             FragmentManager fragmentManager = getSupportFragmentManager();
-            Fragment detailFragment = fragmentManager.findFragmentByTag(DETAIL_FRAGMENT_TAG);
+            Fragment detailFragment = fragmentManager.findFragmentByTag(DETAILS_FRAGMENT_TAG);
             if (detailFragment != null)
             {
                 fragmentManager.beginTransaction().remove(detailFragment).commit();
@@ -254,29 +251,8 @@ public class TaskListActivity extends BaseActivity implements TaskListFragment.C
                 new ByList(mAuthority, this), new ByDueDate(mAuthority), new ByStartDate(mAuthority),
                 new ByPriority(mAuthority, this), new ByProgress(mAuthority), new BySearch(mAuthority, mSearchHistoryHelper) };
 
-        // set up pager adapter
-        try
-        {
-            mPagerAdapter = new TaskGroupPagerAdapter(getSupportFragmentManager(), mGroupingFactories, this, R.xml.listview_tabs);
-        }
-        catch (XmlPullParserException e)
-        {
-            // TODO Automatisch generierter Erfassungsblock
-            e.printStackTrace();
-        }
-        catch (IOException e)
-        {
-            // TODO Automatisch generierter Erfassungsblock
-            e.printStackTrace();
-        }
-        catch (XmlObjectPullParserException e)
-        {
-            // TODO Automatisch generierter Erfassungsblock
-            e.printStackTrace();
-        }
+        mPagerAdapter = new Unchecked<>(() -> new TaskGroupPagerAdapter(getSupportFragmentManager(), mGroupingFactories, this, R.xml.listview_tabs)).value();
 
-        // Setup ViewPager
-        mPagerAdapter.setTwoPaneLayout(mTwoPane);
         mViewPager = (ViewPager) findViewById(R.id.pager);
         mViewPager.setAdapter(mPagerAdapter);
 
@@ -286,7 +262,7 @@ public class TaskListActivity extends BaseActivity implements TaskListFragment.C
         {
             mCurrentPagePosition = currentPageIndex;
             mViewPager.setCurrentItem(currentPageIndex);
-            if (VERSION.SDK_INT >= 14 && mCurrentPageId == R.id.task_group_search)
+            if (mCurrentPageId == R.id.task_group_search)
             {
                 if (mSearchItem != null)
                 {
@@ -304,12 +280,7 @@ public class TaskListActivity extends BaseActivity implements TaskListFragment.C
         // Bind the tabs to the ViewPager
         mTabs = (TabLayout) findViewById(R.id.tabs);
         mTabs.setupWithViewPager(mViewPager);
-
-        // set up the tab icons
-        for (int i = 0, count = mPagerAdapter.getCount(); i < count; ++i)
-        {
-            mTabs.getTabAt(i).setIcon(mPagerAdapter.getTabIcon(i));
-        }
+        setupTabIcons();
 
         mViewPager.addOnPageChangeListener(new OnPageChangeListener()
         {
@@ -384,6 +355,36 @@ public class TaskListActivity extends BaseActivity implements TaskListFragment.C
     }
 
 
+    private void updateTheme()
+    {
+        if (Build.VERSION.SDK_INT >= 29)
+        {
+            boolean sysTheme = mPrefs.getBoolean(
+                    getString(R.string.opentasks_pref_appearance_system_theme),
+                    getResources().getBoolean(R.bool.opentasks_system_theme_default));
+            boolean darkTheme = mPrefs.getBoolean(
+                    getString(R.string.opentasks_pref_appearance_dark_theme),
+                    getResources().getBoolean(R.bool.opentasks_dark_theme_default));
+
+            AppCompatDelegate.setDefaultNightMode(
+                    sysTheme ?
+                            AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM :
+                            darkTheme ?
+                                    AppCompatDelegate.MODE_NIGHT_YES :
+                                    AppCompatDelegate.MODE_NIGHT_NO);
+        }
+    }
+
+
+    private void setupTabIcons()
+    {
+        for (int i = 0, count = mPagerAdapter.getCount(); i < count; ++i)
+        {
+            mTabs.getTabAt(i).setIcon(mPagerAdapter.getTabIcon(i));
+        }
+    }
+
+
     @Override
     protected void onResume()
     {
@@ -412,20 +413,19 @@ public class TaskListActivity extends BaseActivity implements TaskListFragment.C
      * Callback method from {@link TaskListFragment.Callbacks} indicating that the item with the given ID was selected.
      */
     @Override
-    public void onItemSelected(Uri uri, boolean forceReload, int pagePosition)
+    public void onItemSelected(@NonNull Uri uri, @NonNull Color taskListColor, boolean forceReload, int pagePosition)
     {
         // only accept selections from the current visible task fragment or the activity itself
         if (pagePosition == -1 || pagePosition == mCurrentPagePosition)
         {
             if (mTwoPane)
             {
-                mShouldShowDetails = true;
                 if (forceReload)
                 {
-                    mSelectedTaskUri = null;
+                    mSelectedTaskUri = uri;
                     mShouldSwitchToDetail = false;
                 }
-                loadTaskDetailFragment(uri);
+                replaceTaskDetailsFragment(ViewTaskFragment.newInstance(uri, taskListColor));
             }
             else if (forceReload)
             {
@@ -435,42 +435,61 @@ public class TaskListActivity extends BaseActivity implements TaskListFragment.C
                 // for the selected item ID.
                 Intent detailIntent = new Intent(Intent.ACTION_VIEW);
                 detailIntent.setData(uri);
+                detailIntent.putExtra(ViewTaskActivity.EXTRA_COLOR, mLastUsedColor);
                 startActivity(detailIntent);
-                mSwitchedToDetail = true;
                 mShouldSwitchToDetail = false;
             }
         }
     }
 
 
-    private void loadTaskDetailFragment(Uri uri)
+    @Override
+    public void onItemRemoved(@NonNull Uri taskUri)
     {
-        Fragment detailFragment = getSupportFragmentManager().findFragmentByTag(DETAIL_FRAGMENT_TAG);
-
-        if (uri == null)
+        if (taskUri.equals(mSelectedTaskUri))
         {
-            if (!(detailFragment instanceof EmptyTaskFragment))
+            mSelectedTaskUri = null;
+            if (mTwoPane)
             {
-                replaceDetailFragment(new EmptyTaskFragment());
-            }
-        }
-        else
-        {
-            if (detailFragment instanceof ViewTaskFragment)
-            {
-                ((ViewTaskFragment) detailFragment).loadUri(uri);
-            }
-            else
-            {
-                replaceDetailFragment(ViewTaskFragment.newInstance(uri));
+                replaceTaskDetailsFragment(EmptyTaskFragment.newInstance(new ValueColor(mLastUsedColor)));
             }
         }
     }
 
 
-    private void replaceDetailFragment(Fragment fragment)
+    @Override
+    public void onAddNewTask()
     {
-        getSupportFragmentManager().beginTransaction().replace(R.id.task_detail_container, fragment, DETAIL_FRAGMENT_TAG).commit();
+        Intent editTaskIntent = new Intent(Intent.ACTION_INSERT);
+        editTaskIntent.setData(Tasks.getContentUri(mAuthority));
+        startActivityForResult(editTaskIntent, REQUEST_CODE_NEW_TASK);
+    }
+
+
+    @Override
+    public ExpandableGroupDescriptor getGroupDescriptor(int pageId)
+    {
+        for (AbstractGroupingFactory factory : mGroupingFactories)
+        {
+            if (factory.getId() == pageId)
+            {
+                return factory.getExpandableGroupDescriptor();
+            }
+        }
+        return null;
+    }
+
+
+    private void replaceTaskDetailsFragment(@NonNull Fragment fragment)
+    {
+        FragmentManager fragmentManager = getSupportFragmentManager();
+        // only change state if the state has not been saved yet, otherwise just drop it
+        if (!fragmentManager.isStateSaved())
+        {
+            fragmentManager.beginTransaction()
+                    .setCustomAnimations(0, R.anim.openttasks_fade_exit, 0, 0)
+                    .replace(R.id.task_detail_container, fragment, DETAILS_FRAGMENT_TAG).commit();
+        }
     }
 
 
@@ -501,45 +520,20 @@ public class TaskListActivity extends BaseActivity implements TaskListFragment.C
     }
 
 
-    @Override
-    public void onEditTask(Uri taskUri, ContentSet data)
-    {
-        Intent editTaskIntent = new Intent(Intent.ACTION_EDIT);
-        editTaskIntent.setData(taskUri);
-        if (data != null)
-        {
-            Bundle extraBundle = new Bundle();
-            extraBundle.putParcelable(EditTaskActivity.EXTRA_DATA_CONTENT_SET, data);
-            editTaskIntent.putExtra(EditTaskActivity.EXTRA_DATA_BUNDLE, extraBundle);
-        }
-        startActivity(editTaskIntent);
-    }
-
-
-    @Override
-    public void onAddNewTask()
-    {
-        Intent editTaskIntent = new Intent(Intent.ACTION_INSERT);
-        editTaskIntent.setData(Tasks.getContentUri(mAuthority));
-        startActivityForResult(editTaskIntent, REQUEST_CODE_NEW_TASK);
-    }
-
-
     private void resolveIntentAction(Intent intent)
     {
         // check which task should be selected
-        if (intent.hasExtra(EXTRA_DISPLAY_TASK))
+        if (intent.getBooleanExtra(EXTRA_DISPLAY_TASK, false))
 
         {
             mShouldSwitchToDetail = true;
             mSelectedTaskUri = intent.getData();
         }
 
-        if (intent != null && intent.hasExtra(EXTRA_DISPLAY_TASK) && intent.getBooleanExtra(EXTRA_FORCE_LIST_SELECTION, true) && mTwoPane)
+        if (intent.getBooleanExtra(EXTRA_DISPLAY_TASK, false) && intent.getBooleanExtra(EXTRA_FORCE_LIST_SELECTION, true) && mTwoPane)
         {
             mShouldSwitchToDetail = true;
-            Uri newSelection = intent.getData();
-            mSelectedTaskUriOnLaunch = newSelection;
+            mSelectedTaskUriOnLaunch = intent.getData();
             mShouldSelectTaskListItem = true;
             if (mPagerAdapter != null)
             {
@@ -557,29 +551,79 @@ public class TaskListActivity extends BaseActivity implements TaskListFragment.C
     @Override
     public void onActivityResult(int requestCode, int resultCode, Intent intent)
     {
-        if (resultCode == RESULT_OK && intent != null && intent.getData() != null)
+        if (requestCode == REQUEST_CODE_NEW_TASK && resultCode == RESULT_OK && intent != null && intent.getData() != null)
         {
             // Use the same flow to display the new task as if it was opened from the widget
             Intent displayIntent = new Intent(this, TaskListActivity.class);
-            displayIntent.putExtra(TaskListActivity.EXTRA_DISPLAY_TASK, true);
+            displayIntent.putExtra(TaskListActivity.EXTRA_DISPLAY_TASK, !intent.getBooleanExtra(EditTaskFragment.KEY_NEW_TASK, false));
             displayIntent.putExtra(TaskListActivity.EXTRA_FORCE_LIST_SELECTION, true);
             Uri newTaskUri = intent.getData();
             displayIntent.setData(newTaskUri);
             onNewIntent(displayIntent);
+
+            /* Icons have to be refreshed here because of some bug in ViewPager-TabLayout which causes them to disappear.
+            See https://github.com/dmfs/opentasks/issues/643
+            and https://stackoverflow.com/questions/42209046/tablayout-icons-disappear-after-viewpager-refresh */
+            setupTabIcons();
+            return;
         }
+        if (requestCode == REQUEST_CODE_PREFS)
+        {
+            updateTheme();
+            if (Build.VERSION.SDK_INT < 29)
+            {
+                recreate();
+            }
+        }
+        super.onActivityResult(requestCode, resultCode, intent);
     }
 
 
     @Override
-    public void onDelete(Uri taskUri)
+    public void onTaskEditRequested(@NonNull Uri taskUri, ContentSet data)
     {
-        // nothing to do here, the loader will take care of reloading the list and the list view will take care of selecting the next element.
-
-        // empty the detail fragment
-        if (mTwoPane)
+        Intent editTaskIntent = new Intent(Intent.ACTION_EDIT);
+        editTaskIntent.setData(taskUri);
+        if (data != null)
         {
-            loadTaskDetailFragment(null);
+            Bundle extraBundle = new Bundle();
+            extraBundle.putParcelable(EditTaskActivity.EXTRA_DATA_CONTENT_SET, data);
+            editTaskIntent.putExtra(EditTaskActivity.EXTRA_DATA_BUNDLE, extraBundle);
         }
+        startActivity(editTaskIntent);
+    }
+
+
+    @Override
+    public void onTaskDeleted(@NonNull Uri taskUri)
+    {
+        if (taskUri.equals(mSelectedTaskUri)) // Only the selected task can be deleted on the UI, but just to be safe
+        {
+            mSelectedTaskUri = null;
+            if (mTwoPane)
+            {
+                // empty the detail fragment
+                replaceTaskDetailsFragment(EmptyTaskFragment.newInstance(new ValueColor(mLastUsedColor)));
+            }
+        }
+        // The loader will take care of reloading the list and the list view will take care of selecting the next element.
+    }
+
+
+    @Override
+    public void onTaskCompleted(@NonNull Uri taskUri)
+    {
+        /* TODO We delegate to onTaskDeleted() which was used previously for this event, too.
+        This causes the removal of details view, but the task is selected again if completed tasks are shown. This causes a flash. */
+        onTaskDeleted(taskUri);
+    }
+
+
+    @SuppressLint("NewApi")
+    @Override
+    public void onListColorLoaded(@NonNull Color color)
+    {
+        // nothing to do
     }
 
 
@@ -620,7 +664,7 @@ public class TaskListActivity extends BaseActivity implements TaskListFragment.C
         }
         else if (item.getItemId() == R.id.opentasks_menu_app_settings)
         {
-            startActivity(new Intent(this, AppSettingsActivity.class));
+            startActivityForResult(new Intent(this, AppSettingsActivity.class), REQUEST_CODE_PREFS);
             return true;
         }
         else
@@ -630,22 +674,14 @@ public class TaskListActivity extends BaseActivity implements TaskListFragment.C
     }
 
 
-    @TargetApi(Build.VERSION_CODES.ICE_CREAM_SANDWICH)
     private void hideSearchActionView()
     {
         MenuItemCompat.collapseActionView(mSearchItem);
     }
 
 
-    @TargetApi(Build.VERSION_CODES.ICE_CREAM_SANDWICH)
     public void setupSearch(Menu menu)
     {
-        // bail early on unsupported devices
-        if (Build.VERSION.SDK_INT < 11)
-        {
-            return;
-        }
-
         mSearchItem = menu.findItem(R.id.search);
         MenuItemCompat.setOnActionExpandListener(mSearchItem, new OnActionExpandListener()
         {
@@ -724,20 +760,6 @@ public class TaskListActivity extends BaseActivity implements TaskListFragment.C
     }
 
 
-    @Override
-    public ExpandableGroupDescriptor getGroupDescriptor(int pageId)
-    {
-        for (AbstractGroupingFactory factory : mGroupingFactories)
-        {
-            if (factory.getId() == pageId)
-            {
-                return factory.getExpandableGroupDescriptor();
-            }
-        }
-        return null;
-    }
-
-
     /**
      * Notifies the search fragment of an update.
      */
@@ -754,40 +776,6 @@ public class TaskListActivity extends BaseActivity implements TaskListFragment.C
     };
 
 
-    private int darkenColor(int color)
-    {
-        float[] hsv = new float[3];
-        Color.colorToHSV(color, hsv);
-        hsv[2] = hsv[2] * 0.75f;
-        color = Color.HSVToColor(hsv);
-        return color;
-    }
-
-
-    @SuppressLint("NewApi")
-    @Override
-    public void updateColor(int color)
-    {
-        if (mTwoPane)
-        {
-            getSupportActionBar().setBackgroundDrawable(new ColorDrawable(color));
-            mTabs.setBackgroundColor(color);
-
-            if (mAppBarLayout != null)
-            {
-                mAppBarLayout.setBackgroundColor(color);
-            }
-
-            if (VERSION.SDK_INT >= 21)
-            {
-                Window window = getWindow();
-                window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
-                window.setStatusBarColor(darkenColor(color));
-            }
-        }
-    }
-
-
     public Uri getSelectedTaskUri()
     {
         if (mShouldSelectTaskListItem)
@@ -801,5 +789,23 @@ public class TaskListActivity extends BaseActivity implements TaskListFragment.C
     public boolean isInTransientState()
     {
         return mTransientState;
+    }
+
+
+    @Override
+    public Resources.Theme getTheme()
+    {
+        Resources.Theme theme = super.getTheme();
+        if (Build.VERSION.SDK_INT < 29)
+        {
+            theme.applyStyle(
+                    mPrefs.getBoolean(
+                            getString(R.string.opentasks_pref_appearance_dark_theme),
+                            getResources().getBoolean(R.bool.opentasks_dark_theme_default)) ?
+                            R.style.OpenTasks_Theme_Dark :
+                            R.style.OpenTasks_Theme_Light,
+                    true);
+        }
+        return theme;
     }
 }

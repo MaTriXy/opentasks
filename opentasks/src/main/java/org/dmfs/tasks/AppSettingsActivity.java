@@ -16,13 +16,19 @@
 
 package org.dmfs.tasks;
 
-import android.annotation.TargetApi;
+import android.content.Intent;
+import android.content.SharedPreferences;
+import android.content.res.Resources;
 import android.os.Build;
 import android.os.Bundle;
-import android.support.annotation.RequiresApi;
+import android.provider.Settings;
 import android.view.MenuItem;
 
 import org.dmfs.tasks.utils.BaseActivity;
+
+import androidx.preference.Preference;
+import androidx.preference.PreferenceFragmentCompat;
+import androidx.preference.PreferenceManager;
 
 
 /**
@@ -30,20 +36,26 @@ import org.dmfs.tasks.utils.BaseActivity;
  *
  * @author Gabor Keszthelyi
  */
-@RequiresApi(api = Build.VERSION_CODES.HONEYCOMB)
-public final class AppSettingsActivity extends BaseActivity
+public final class AppSettingsActivity extends BaseActivity implements PreferenceFragmentCompat.OnPreferenceStartFragmentCallback
 {
+    private SharedPreferences mPrefs;
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState)
     {
+        mPrefs = PreferenceManager.getDefaultSharedPreferences(this);
+
         super.onCreate(savedInstanceState);
-
-        getFragmentManager().beginTransaction()
-                .replace(android.R.id.content, new AppSettingsFragment())
-                .commit();
-
-        setupActionBar();
+        setContentView(R.layout.opentasks_activity_preferences);
+        if (savedInstanceState == null)
+        {
+            getSupportFragmentManager().beginTransaction()
+                    .replace(R.id.content, new AppSettingsFragment())
+                    .commit();
+        }
+        setSupportActionBar(findViewById(R.id.toolbar));
+        getSupportActionBar().setDisplayHomeAsUpEnabled(true);
     }
 
 
@@ -59,12 +71,40 @@ public final class AppSettingsActivity extends BaseActivity
     }
 
 
-    @TargetApi(Build.VERSION_CODES.HONEYCOMB)
-    private void setupActionBar()
+    @Override
+    public boolean onPreferenceStartFragment(PreferenceFragmentCompat caller, Preference pref)
     {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB)
+        if (Build.VERSION.SDK_INT >= 26 && "notifications".equalsIgnoreCase(pref.getKey()))
         {
-            getSupportActionBar().setDisplayHomeAsUpEnabled(true);
+            //  open the system notification settings
+            Intent intent = new Intent();
+            intent.setAction(Settings.ACTION_APP_NOTIFICATION_SETTINGS);
+            intent.putExtra(Settings.EXTRA_APP_PACKAGE, getPackageName());
+            startActivity(intent);
+            return true;
         }
+        getSupportFragmentManager().beginTransaction()
+                .replace(R.id.content, getSupportFragmentManager().getFragmentFactory().instantiate(getClassLoader(), pref.getFragment()))
+                .addToBackStack("")
+                .commit();
+        return true;
+    }
+
+
+    @Override
+    public Resources.Theme getTheme()
+    {
+        Resources.Theme theme = super.getTheme();
+        if (Build.VERSION.SDK_INT < 29)
+        {
+            theme.applyStyle(
+                    mPrefs.getBoolean(
+                            getString(R.string.opentasks_pref_appearance_dark_theme),
+                            getResources().getBoolean(R.bool.opentasks_dark_theme_default)) ?
+                            R.style.OpenTasks_Theme_Dark :
+                            R.style.OpenTasks_Theme_Light,
+                    true);
+        }
+        return theme;
     }
 }

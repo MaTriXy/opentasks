@@ -22,7 +22,7 @@ import android.content.Context;
 import android.content.DialogInterface;
 import android.content.DialogInterface.OnKeyListener;
 import android.os.Bundle;
-import android.support.v4.app.Fragment;
+import androidx.fragment.app.Fragment;
 import android.view.ContextThemeWrapper;
 import android.view.KeyEvent;
 import android.view.LayoutInflater;
@@ -106,8 +106,6 @@ public class InputTextDialogFragment extends SupportDialogFragment implements On
      *
      * @param title
      *         The title of the dialog.
-     * @param message
-     *         The text of the message field.
      * @param hint
      *         The hint of the input field.
      *
@@ -124,9 +122,6 @@ public class InputTextDialogFragment extends SupportDialogFragment implements On
      *
      * @param title
      *         The title of the dialog.
-     * @param message
-     *         The text of the message field.
-     *
      * @return A new {@link InputTextDialogFragment}.
      */
     public static InputTextDialogFragment newInstance(String title, String hint)

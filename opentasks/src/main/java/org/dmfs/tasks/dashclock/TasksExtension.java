@@ -168,7 +168,7 @@ public class TasksExtension extends DashClockExtension
 
                 // intent
                 String accountType = c.getString(c.getColumnIndex(Instances.ACCOUNT_TYPE));
-                Long taskId = c.getLong(c.getColumnIndex(Instances.TASK_ID));
+                long taskId = c.getLong(c.getColumnIndex(Instances._ID));
                 Intent clickIntent = buildClickIntent(taskId, accountType);
 
                 // Publish the extension data update.
@@ -300,34 +300,20 @@ public class TasksExtension extends DashClockExtension
             calendar.setTimeZone(TimeZone.getTimeZone("UTC"));
             long todayUTC = calendar.getTimeInMillis();
 
-            if (dueTime == todayUTC)
-            {
-                return true;
-            }
-            else
-            {
-                return false;
-            }
+            return dueTime == todayUTC;
         }
         else
         {
-            if (startTime < mNow)
-            {
-                return true;
-            }
-            else
-            {
-                return false;
-            }
+            return startTime < mNow;
         }
 
     }
 
 
-    protected Intent buildClickIntent(long taskId, String accountType)
+    protected Intent buildClickIntent(long instanceId, String accountType)
     {
         Intent clickIntent = new Intent(Intent.ACTION_VIEW);
-        clickIntent.setData(ContentUris.withAppendedId(Tasks.getContentUri(mAuthority), taskId));
+        clickIntent.setData(ContentUris.withAppendedId(Instances.getContentUri(mAuthority), instanceId));
         clickIntent.putExtra(EditTaskActivity.EXTRA_DATA_ACCOUNT_TYPE, accountType);
 
         return clickIntent;

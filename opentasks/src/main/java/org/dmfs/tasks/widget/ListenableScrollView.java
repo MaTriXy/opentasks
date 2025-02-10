@@ -17,7 +17,7 @@
 package org.dmfs.tasks.widget;
 
 import android.content.Context;
-import android.support.v4.widget.NestedScrollView;
+import androidx.core.widget.NestedScrollView;
 import android.util.AttributeSet;
 import android.widget.ScrollView;
 
@@ -42,7 +42,7 @@ public class ListenableScrollView extends NestedScrollView
          * @param newScrollY
          *         The new scroll position.
          */
-        public void onScroll(int oldScrollY, int newScrollY);
+        void onScroll(int oldScrollY, int newScrollY);
     }
 
 

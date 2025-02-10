@@ -27,8 +27,15 @@ import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
 import android.net.Uri;
 
+import org.dmfs.iterables.SingletonIterable;
+import org.dmfs.jems.fragile.Fragile;
+import org.dmfs.jems.iterable.composite.Joined;
+import org.dmfs.jems.single.Single;
+import org.dmfs.provider.tasks.utils.Profiled;
+
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.Locale;
 import java.util.Set;
 
 
@@ -46,11 +53,17 @@ import java.util.Set;
 abstract class SQLiteContentProvider extends ContentProvider
 {
 
+    interface TransactionEndTask
+    {
+        void execute(SQLiteDatabase database);
+    }
+
+
     @SuppressWarnings("unused")
     private static final String TAG = "SQLiteContentProvider";
 
     private SQLiteOpenHelper mOpenHelper;
-    private Set<Uri> mChangedUris;
+    private final Set<Uri> mChangedUris = new HashSet<>();
 
     private final ThreadLocal<Boolean> mApplyingBatch = new ThreadLocal<Boolean>();
     private static final int SLEEP_AFTER_YIELD_DELAY = 4000;
@@ -60,13 +73,20 @@ abstract class SQLiteContentProvider extends ContentProvider
      */
     private static final int MAX_OPERATIONS_PER_YIELD_POINT = 500;
 
+    private final Iterable<TransactionEndTask> mTransactionEndTasks;
+
+
+    protected SQLiteContentProvider(Iterable<TransactionEndTask> transactionEndTasks)
+    {
+        // append a task to set the transaction to successful
+        mTransactionEndTasks = new Joined<>(transactionEndTasks, new SingletonIterable<>(new SuccessfulTransactionEndTask()));
+    }
+
 
     @Override
     public boolean onCreate()
     {
-        Context context = getContext();
-        mOpenHelper = getDatabaseHelper(context);
-        mChangedUris = new HashSet<Uri>();
+        mOpenHelper = getDatabaseHelper(getContext());
         return true;
     }
 
@@ -126,164 +146,175 @@ abstract class SQLiteContentProvider extends ContentProvider
     @Override
     public Uri insert(Uri uri, ContentValues values)
     {
-        Uri result = null;
-        boolean callerIsSyncAdapter = isCallerSyncAdapter(uri);
-        boolean applyingBatch = applyingBatch();
-        SQLiteDatabase db = mOpenHelper.getWritableDatabase();
-        if (!applyingBatch)
+        return new Profiled("Insert").run((Single<Uri>) () ->
         {
-            db.beginTransaction();
-            try
+            Uri result;
+            boolean callerIsSyncAdapter = isCallerSyncAdapter(uri);
+            boolean applyingBatch = applyingBatch();
+            SQLiteDatabase db = mOpenHelper.getWritableDatabase();
+            if (!applyingBatch)
+            {
+                db.beginTransaction();
+                try
+                {
+                    result = insertInTransaction(db, uri, values, callerIsSyncAdapter);
+                    endTransaction(db);
+                }
+                finally
+                {
+                    db.endTransaction();
+                }
+                onEndTransaction(callerIsSyncAdapter);
+            }
+            else
             {
                 result = insertInTransaction(db, uri, values, callerIsSyncAdapter);
-                db.setTransactionSuccessful();
             }
-            finally
-            {
-                db.endTransaction();
-            }
-
-            onEndTransaction(callerIsSyncAdapter);
-        }
-        else
-        {
-            result = insertInTransaction(db, uri, values, callerIsSyncAdapter);
-        }
-        return result;
+            return result;
+        });
     }
 
 
     @Override
     public int bulkInsert(Uri uri, ContentValues[] values)
     {
-        int numValues = values.length;
-        boolean callerIsSyncAdapter = isCallerSyncAdapter(uri);
-        SQLiteDatabase db = mOpenHelper.getWritableDatabase();
-        db.beginTransaction();
-        try
+        return new Profiled("BulkInsert").run((Single<Integer>) () ->
         {
-            for (int i = 0; i < numValues; i++)
+            int numValues = values.length;
+            boolean callerIsSyncAdapter = isCallerSyncAdapter(uri);
+            SQLiteDatabase db = mOpenHelper.getWritableDatabase();
+            db.beginTransaction();
+            try
             {
-                insertInTransaction(db, uri, values[i], callerIsSyncAdapter);
-                db.yieldIfContendedSafely();
+                for (int i = 0; i < numValues; i++)
+                {
+                    insertInTransaction(db, uri, values[i], callerIsSyncAdapter);
+                    db.yieldIfContendedSafely();
+                }
+                endTransaction(db);
             }
-            db.setTransactionSuccessful();
-        }
-        finally
-        {
-            db.endTransaction();
-        }
-
-        onEndTransaction(callerIsSyncAdapter);
-        return numValues;
+            finally
+            {
+                db.endTransaction();
+            }
+            onEndTransaction(callerIsSyncAdapter);
+            return numValues;
+        });
     }
 
 
     @Override
     public int update(Uri uri, ContentValues values, String selection, String[] selectionArgs)
     {
-        int count = 0;
-        boolean callerIsSyncAdapter = isCallerSyncAdapter(uri);
-        boolean applyingBatch = applyingBatch();
-        SQLiteDatabase db = mOpenHelper.getWritableDatabase();
-        if (!applyingBatch)
+        return new Profiled("Update").run((Single<Integer>) () ->
         {
-            db.beginTransaction();
-            try
+            int count;
+            boolean callerIsSyncAdapter = isCallerSyncAdapter(uri);
+            boolean applyingBatch = applyingBatch();
+            SQLiteDatabase db = mOpenHelper.getWritableDatabase();
+            if (!applyingBatch)
+            {
+                db.beginTransaction();
+                try
+                {
+                    count = updateInTransaction(db, uri, values, selection, selectionArgs, callerIsSyncAdapter);
+                    endTransaction(db);
+                }
+                finally
+                {
+                    db.endTransaction();
+                }
+                onEndTransaction(callerIsSyncAdapter);
+            }
+            else
             {
                 count = updateInTransaction(db, uri, values, selection, selectionArgs, callerIsSyncAdapter);
-                db.setTransactionSuccessful();
             }
-            finally
-            {
-                db.endTransaction();
-            }
-
-            onEndTransaction(callerIsSyncAdapter);
-        }
-        else
-        {
-            count = updateInTransaction(db, uri, values, selection, selectionArgs, callerIsSyncAdapter);
-        }
-
-        return count;
+            return count;
+        });
     }
 
 
     @Override
     public int delete(Uri uri, String selection, String[] selectionArgs)
     {
-        int count = 0;
-        boolean callerIsSyncAdapter = isCallerSyncAdapter(uri);
-        boolean applyingBatch = applyingBatch();
-        SQLiteDatabase db = mOpenHelper.getWritableDatabase();
-        if (!applyingBatch)
+        return new Profiled("Delete").run((Single<Integer>) () ->
         {
-            db.beginTransaction();
-            try
+            int count;
+            boolean callerIsSyncAdapter = isCallerSyncAdapter(uri);
+            boolean applyingBatch = applyingBatch();
+            SQLiteDatabase db = mOpenHelper.getWritableDatabase();
+            if (!applyingBatch)
+            {
+                db.beginTransaction();
+                try
+                {
+                    count = deleteInTransaction(db, uri, selection, selectionArgs, callerIsSyncAdapter);
+                    endTransaction(db);
+                }
+                finally
+                {
+                    db.endTransaction();
+                }
+                onEndTransaction(callerIsSyncAdapter);
+            }
+            else
             {
                 count = deleteInTransaction(db, uri, selection, selectionArgs, callerIsSyncAdapter);
-                db.setTransactionSuccessful();
             }
-            finally
-            {
-                db.endTransaction();
-            }
-
-            onEndTransaction(callerIsSyncAdapter);
-        }
-        else
-        {
-            count = deleteInTransaction(db, uri, selection, selectionArgs, callerIsSyncAdapter);
-        }
-        return count;
+            return count;
+        });
     }
 
 
     @Override
     public ContentProviderResult[] applyBatch(ArrayList<ContentProviderOperation> operations) throws OperationApplicationException
     {
-        int ypCount = 0;
-        int opCount = 0;
-        boolean callerIsSyncAdapter = false;
-        SQLiteDatabase db = mOpenHelper.getWritableDatabase();
-        db.beginTransaction();
-        try
-        {
-            mApplyingBatch.set(true);
-            final int numOperations = operations.size();
-            final ContentProviderResult[] results = new ContentProviderResult[numOperations];
-            for (int i = 0; i < numOperations; i++)
-            {
-                if (++opCount >= MAX_OPERATIONS_PER_YIELD_POINT)
+        return new Profiled(String.format(Locale.ENGLISH, "Batch of %d operations", operations.size())).run(
+                (Fragile<ContentProviderResult[], OperationApplicationException>) () ->
                 {
-                    throw new OperationApplicationException("Too many content provider operations between yield points. "
-                            + "The maximum number of operations per yield point is " + MAX_OPERATIONS_PER_YIELD_POINT, ypCount);
-                }
-                final ContentProviderOperation operation = operations.get(i);
-                if (!callerIsSyncAdapter && isCallerSyncAdapter(operation.getUri()))
-                {
-                    callerIsSyncAdapter = true;
-                }
-                if (i > 0 && operation.isYieldAllowed())
-                {
-                    opCount = 0;
-                    if (db.yieldIfContendedSafely(SLEEP_AFTER_YIELD_DELAY))
+                    int ypCount = 0;
+                    int opCount = 0;
+                    boolean callerIsSyncAdapter = false;
+                    SQLiteDatabase db = mOpenHelper.getWritableDatabase();
+                    db.beginTransaction();
+                    try
                     {
-                        ypCount++;
+                        mApplyingBatch.set(true);
+                        final int numOperations = operations.size();
+                        final ContentProviderResult[] results = new ContentProviderResult[numOperations];
+                        for (int i = 0; i < numOperations; i++)
+                        {
+                            if (++opCount >= MAX_OPERATIONS_PER_YIELD_POINT)
+                            {
+                                throw new OperationApplicationException("Too many content provider operations between yield points. "
+                                        + "The maximum number of operations per yield point is " + MAX_OPERATIONS_PER_YIELD_POINT, ypCount);
+                            }
+                            final ContentProviderOperation operation = operations.get(i);
+                            if (!callerIsSyncAdapter && isCallerSyncAdapter(operation.getUri()))
+                            {
+                                callerIsSyncAdapter = true;
+                            }
+                            if (i > 0 && operation.isYieldAllowed())
+                            {
+                                opCount = 0;
+                                if (db.yieldIfContendedSafely(SLEEP_AFTER_YIELD_DELAY))
+                                {
+                                    ypCount++;
+                                }
+                            }
+                            results[i] = operation.apply(this, results, i);
+                        }
+                        endTransaction(db);
+                        return results;
                     }
-                }
-                results[i] = operation.apply(this, results, i);
-            }
-            db.setTransactionSuccessful();
-            return results;
-        }
-        finally
-        {
-            mApplyingBatch.set(false);
-            db.endTransaction();
-            onEndTransaction(callerIsSyncAdapter);
-        }
+                    finally
+                    {
+                        mApplyingBatch.set(false);
+                        db.endTransaction();
+                        onEndTransaction(callerIsSyncAdapter);
+                    }
+                });
     }
 
 
@@ -309,4 +340,25 @@ abstract class SQLiteContentProvider extends ContentProvider
         return false;
     }
 
+
+    private void endTransaction(SQLiteDatabase database)
+    {
+        for (TransactionEndTask task : mTransactionEndTasks)
+        {
+            task.execute(database);
+        }
+    }
+
+
+    /**
+     * A {@link TransactionEndTask} which sets the transaction to be successful.
+     */
+    private static class SuccessfulTransactionEndTask implements TransactionEndTask
+    {
+        @Override
+        public void execute(SQLiteDatabase database)
+        {
+            database.setTransactionSuccessful();
+        }
+    }
 }

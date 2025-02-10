@@ -18,7 +18,6 @@ package org.dmfs.tasks;
 
 import android.accounts.Account;
 import android.accounts.AccountManager;
-import android.annotation.TargetApi;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.ContentResolver;
@@ -30,14 +29,11 @@ import android.content.DialogInterface.OnClickListener;
 import android.content.Intent;
 import android.content.res.Resources;
 import android.database.Cursor;
+import android.database.MatrixCursor;
 import android.net.Uri;
 import android.os.AsyncTask;
-import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
-import android.support.design.widget.Snackbar;
-import android.support.v4.app.LoaderManager;
-import android.support.v4.content.Loader;
 import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuInflater;
@@ -51,6 +47,10 @@ import android.widget.ExpandableListView.OnGroupCollapseListener;
 import android.widget.ListView;
 import android.widget.TextView;
 
+import com.google.android.material.snackbar.Snackbar;
+
+import org.dmfs.android.bolts.color.Color;
+import org.dmfs.android.bolts.color.elementary.ValueColor;
 import org.dmfs.android.retentionmagic.SupportFragment;
 import org.dmfs.android.retentionmagic.annotations.Parameter;
 import org.dmfs.android.retentionmagic.annotations.Retain;
@@ -58,12 +58,11 @@ import org.dmfs.provider.tasks.AuthorityUtil;
 import org.dmfs.tasks.contract.TaskContract;
 import org.dmfs.tasks.contract.TaskContract.Instances;
 import org.dmfs.tasks.contract.TaskContract.Tasks;
-import org.dmfs.tasks.groupings.ByDueDate;
-import org.dmfs.tasks.groupings.ByList;
 import org.dmfs.tasks.groupings.filters.AbstractFilter;
 import org.dmfs.tasks.groupings.filters.ConstantFilter;
 import org.dmfs.tasks.model.Model;
 import org.dmfs.tasks.model.Sources;
+import org.dmfs.tasks.model.TaskFieldAdapters;
 import org.dmfs.tasks.utils.ExpandableGroupDescriptor;
 import org.dmfs.tasks.utils.ExpandableGroupDescriptorAdapter;
 import org.dmfs.tasks.utils.FlingDetector;
@@ -71,7 +70,12 @@ import org.dmfs.tasks.utils.FlingDetector.OnFlingListener;
 import org.dmfs.tasks.utils.OnChildLoadedListener;
 import org.dmfs.tasks.utils.OnModelLoadedListener;
 import org.dmfs.tasks.utils.RetainExpandableListView;
+import org.dmfs.tasks.utils.SafeFragmentUiRunnable;
 import org.dmfs.tasks.utils.SearchHistoryDatabaseHelper.SearchHistoryColumns;
+
+import androidx.annotation.NonNull;
+import androidx.loader.app.LoaderManager;
+import androidx.loader.content.Loader;
 
 
 /**
@@ -90,7 +94,6 @@ public class TaskListFragment extends SupportFragment
     private static final String TAG = "org.dmfs.tasks.TaskListFragment";
 
     private final static String ARG_INSTANCE_ID = "instance_id";
-    private final static String ARG_TWO_PANE_LAYOUT = "two_pane_layout";
 
     private static final long INTERVAL_LISTVIEW_REDRAW = 60000;
 
@@ -100,8 +103,7 @@ public class TaskListFragment extends SupportFragment
     private final static AbstractFilter COMPLETED_FILTER = new ConstantFilter(Tasks.IS_CLOSED + "=0");
 
     /**
-     * The group descriptor to use. At present this can be either {@link ByDueDate#GROUP_DESCRIPTOR}, {@link ByCompleted#GROUP_DESCRIPTOR} or
-     * {@link ByList#GROUP_DESCRIPTOR}.
+     * The group descriptor to use.
      */
     private ExpandableGroupDescriptor mGroupDescriptor;
 
@@ -127,13 +129,12 @@ public class TaskListFragment extends SupportFragment
     @Parameter(key = ARG_INSTANCE_ID)
     private int mInstancePosition;
 
-    @Parameter(key = ARG_TWO_PANE_LAYOUT)
-    private boolean mTwoPaneLayout;
-
     private Loader<Cursor> mCursorLoader;
     private String mAuthority;
 
     private Uri mSelectedTaskUri;
+
+    private boolean mTwoPaneLayout;
 
     /**
      * The child position to open when the fragment is displayed.
@@ -151,17 +152,11 @@ public class TaskListFragment extends SupportFragment
         {
             selectChildView(parent, groupPosition, childPosition, true);
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB)
-            {
-                if (mExpandableListView.getChoiceMode() == ExpandableListView.CHOICE_MODE_SINGLE)
-                {
-                    mActivatedPositionGroup = groupPosition;
-                    mActivatedPositionChild = childPosition;
-                }
-            }
+            mActivatedPositionGroup = groupPosition;
+            mActivatedPositionChild = childPosition;
             /*
              * In contrast to a ListView an ExpandableListView does not set the activated item on it's own. So we have to do that here.
-			 */
+             */
             setActivatedItem(groupPosition, childPosition);
             return true;
         }
@@ -194,16 +189,27 @@ public class TaskListFragment extends SupportFragment
          *
          * @param taskUri
          *         The {@link Uri} of the selected task.
+         * @param taskListColor
+         *         the color of the task list (used for toolbars)
          * @param forceReload
          *         Whether to reload the task or not.
-         * @param sender
-         *         The sender of the callback.
          */
-        public void onItemSelected(Uri taskUri, boolean forceReload, int pagePosition);
+        void onItemSelected(@NonNull Uri taskUri, @NonNull Color taskListColor, boolean forceReload, int pagePosition);
 
-        public ExpandableGroupDescriptor getGroupDescriptor(int position);
+        /**
+         * Called when a task has been removed from the list.
+         * <p>
+         * TODO It's only called when task is deleted by the swipe out, and not when it is completed.
+         * It should probably be called that time, too. See https://github.com/dmfs/opentasks/issues/641.
+         *
+         * @param taskUri
+         *         the content uri of the task that has been removed
+         */
+        void onItemRemoved(@NonNull Uri taskUri);
 
-        public void onAddNewTask();
+        void onAddNewTask();
+
+        ExpandableGroupDescriptor getGroupDescriptor(int position);
     }
 
 
@@ -211,24 +217,23 @@ public class TaskListFragment extends SupportFragment
      * A runnable that periodically updates the list. We need that to update relative dates & times. TODO: we probably should move that to the adapter to update
      * only the date & times fields, not the entire list.
      */
-    private Runnable mListRedrawRunnable = new Runnable()
+    private Runnable mListRedrawRunnable = new SafeFragmentUiRunnable(this, new Runnable()
     {
 
         @Override
         public void run()
         {
             mExpandableListView.invalidateViews();
-            mHandler.postDelayed(this, INTERVAL_LISTVIEW_REDRAW);
+            mHandler.postDelayed(mListRedrawRunnable, INTERVAL_LISTVIEW_REDRAW);
         }
-    };
+    });
 
 
-    public static TaskListFragment newInstance(int instancePosition, boolean twoPaneLayout)
+    public static TaskListFragment newInstance(int instancePosition)
     {
         TaskListFragment result = new TaskListFragment();
         Bundle args = new Bundle();
         args.putInt(ARG_INSTANCE_ID, instancePosition);
-        args.putBoolean(ARG_TWO_PANE_LAYOUT, twoPaneLayout);
         result.setArguments(args);
         return result;
     }
@@ -246,6 +251,9 @@ public class TaskListFragment extends SupportFragment
     public void onAttach(Activity activity)
     {
         super.onAttach(activity);
+
+        mTwoPaneLayout = activity.getResources().getBoolean(R.bool.has_two_panes);
+
         mAuthority = AuthorityUtil.taskAuthority(activity);
 
         mAppContext = activity.getBaseContext();
@@ -278,12 +286,6 @@ public class TaskListFragment extends SupportFragment
         View rootView = inflater.inflate(R.layout.fragment_expandable_task_list, container, false);
         mExpandableListView = (RetainExpandableListView) rootView.findViewById(android.R.id.list);
 
-        if (!mTwoPaneLayout)
-        {
-            // Add a footer to make sure the floating action button doesn't hide anything.
-            mExpandableListView.addFooterView(inflater.inflate(R.layout.task_list_group, mExpandableListView, false));
-        }
-
         if (mGroupDescriptor == null)
         {
             loadGroupDescriptor();
@@ -298,8 +300,7 @@ public class TaskListFragment extends SupportFragment
             mExpandableListView.expandGroups(mSavedExpandedGroups);
         }
 
-        FlingDetector swiper = new FlingDetector(mExpandableListView, mGroupDescriptor.getElementViewDescriptor().getFlingContentViewId(),
-                getActivity().getApplicationContext());
+        FlingDetector swiper = new FlingDetector(mExpandableListView, mGroupDescriptor.getElementViewDescriptor().getFlingContentViewId());
         swiper.setOnFlingListener(this);
 
         return rootView;
@@ -369,7 +370,6 @@ public class TaskListFragment extends SupportFragment
     }
 
 
-    @TargetApi(Build.VERSION_CODES.HONEYCOMB)
     @Override
     public void onCreateOptionsMenu(Menu menu, MenuInflater inflater)
     {
@@ -381,18 +381,6 @@ public class TaskListFragment extends SupportFragment
         if (item != null)
         {
             item.setChecked(mSavedCompletedFilter);
-
-            if (android.os.Build.VERSION.SDK_INT < Build.VERSION_CODES.HONEYCOMB)
-            {
-                if (mSavedCompletedFilter)
-                {
-                    item.setTitle(R.string.menu_hide_completed);
-                }
-                else
-                {
-                    item.setTitle(R.string.menu_show_completed);
-                }
-            }
         }
     }
 
@@ -460,21 +448,14 @@ public class TaskListFragment extends SupportFragment
             }
         }
 
-        mHandler.post(new Runnable()
-        {
-            @Override
-            public void run()
-            {
-                mAdapter.reloadLoadedGroups();
-            }
-        });
+        mHandler.post(new SafeFragmentUiRunnable(this, () -> mAdapter.reloadLoadedGroups()));
     }
 
 
     @Override
     public void onLoaderReset(Loader<Cursor> loader)
     {
-        mAdapter.changeCursor(null);
+        mAdapter.changeCursor(new MatrixCursor(new String[] { "_id" }));
     }
 
 
@@ -515,18 +496,10 @@ public class TaskListFragment extends SupportFragment
             {
                 return;
             }
-            // TODO: for now we get the id of the task, not the instance, once we support recurrence we'll have to change that
-            Long selectTaskId = cursor.getLong(cursor.getColumnIndex(Instances.TASK_ID));
 
-            if (selectTaskId != null)
-            {
-                // Notify the active callbacks interface (the activity, if the fragment is attached to one) that an item has been selected.
-
-                // TODO: use the instance URI one we support recurrence
-                Uri taskUri = ContentUris.withAppendedId(Tasks.getContentUri(mAuthority), selectTaskId);
-
-                mCallbacks.onItemSelected(taskUri, force, mInstancePosition);
-            }
+            Uri taskUri = ContentUris.withAppendedId(Instances.getContentUri(mAuthority), (long) TaskFieldAdapters.TASK_ID.get(cursor));
+            Color taskListColor = new ValueColor(TaskFieldAdapters.LIST_COLOR.get(cursor));
+            mCallbacks.onItemSelected(taskUri, taskListColor, force, mInstancePosition);
         }
     }
 
@@ -536,10 +509,10 @@ public class TaskListFragment extends SupportFragment
      */
     public void prepareReload()
     {
-        mAdapter = new ExpandableGroupDescriptorAdapter(getActivity(), getLoaderManager(), mGroupDescriptor);
+        mAdapter = new ExpandableGroupDescriptorAdapter(new MatrixCursor(new String[] { "_id" }), getActivity(), getLoaderManager(), mGroupDescriptor);
         mExpandableListView.setAdapter(mAdapter);
-        mExpandableListView.setOnChildClickListener((android.widget.ExpandableListView.OnChildClickListener) mTaskItemClickListener);
-        mExpandableListView.setOnGroupCollapseListener((android.widget.ExpandableListView.OnGroupCollapseListener) mTaskListCollapseListener);
+        mExpandableListView.setOnChildClickListener(mTaskItemClickListener);
+        mExpandableListView.setOnGroupCollapseListener(mTaskListCollapseListener);
         mAdapter.setOnChildLoadedListener(this);
         mAdapter.setChildCursorFilter(COMPLETED_FILTER);
         restoreFilterState();
@@ -613,6 +586,7 @@ public class TaskListFragment extends SupportFragment
                 // TODO: remove the task in a background task
                 mAppContext.getContentResolver().delete(taskUri, null, null);
                 Snackbar.make(mExpandableListView, getString(R.string.toast_task_deleted, taskTitle), Snackbar.LENGTH_SHORT).show();
+                mCallbacks.onItemRemoved(taskUri);
             }
         }).setMessage(getString(R.string.confirm_delete_message_with_title, taskTitle)).create().show();
     }
@@ -623,8 +597,6 @@ public class TaskListFragment extends SupportFragment
      *
      * @param taskUri
      *         The {@link Uri} of the task.
-     * @param taskTitle
-     *         The name/title of the task.
      */
     private void openTaskEditor(final Uri taskUri, final String accountType)
     {
@@ -727,42 +699,38 @@ public class TaskListFragment extends SupportFragment
 
             if (cursor != null)
             {
-                // TODO: for now we get the id of the task, not the instance, once we support recurrence we'll have to change that
-                Long taskId = cursor.getLong(cursor.getColumnIndex(Instances.TASK_ID));
+                long instanceId = cursor.getLong(cursor.getColumnIndex(Instances._ID));
 
-                if (taskId != null)
+                boolean closed = cursor.getLong(cursor.getColumnIndex(Instances.IS_CLOSED)) > 0;
+                String title = cursor.getString(cursor.getColumnIndex(Instances.TITLE));
+                // TODO: use the instance URI once we support recurrence
+                Uri taskUri = ContentUris.withAppendedId(Instances.getContentUri(mAuthority), instanceId);
+
+                if (direction == FlingDetector.RIGHT_FLING)
                 {
-                    boolean closed = cursor.getLong(cursor.getColumnIndex(Instances.IS_CLOSED)) > 0;
-                    String title = cursor.getString(cursor.getColumnIndex(Instances.TITLE));
-                    // TODO: use the instance URI once we support recurrence
-                    Uri taskUri = ContentUris.withAppendedId(Tasks.getContentUri(mAuthority), taskId);
-
-                    if (direction == FlingDetector.RIGHT_FLING)
+                    if (closed)
                     {
-                        if (closed)
-                        {
-                            removeTask(taskUri, title);
-                            // we do not know for sure if the task has been removed since the user is asked for confirmation first, so return false
+                        removeTask(taskUri, title);
+                        // we do not know for sure if the task has been removed since the user is asked for confirmation first, so return false
 
-                            return false;
+                        return false;
 
-                        }
-                        else
-                        {
-                            return setCompleteTask(taskUri, title, true);
-                        }
                     }
-                    else if (direction == FlingDetector.LEFT_FLING)
+                    else
                     {
-                        if (closed)
-                        {
-                            return setCompleteTask(taskUri, title, false);
-                        }
-                        else
-                        {
-                            openTaskEditor(taskUri, cursor.getString(cursor.getColumnIndex(Instances.ACCOUNT_TYPE)));
-                            return false;
-                        }
+                        return setCompleteTask(taskUri, title, true);
+                    }
+                }
+                else if (direction == FlingDetector.LEFT_FLING)
+                {
+                    if (closed)
+                    {
+                        return setCompleteTask(taskUri, title, false);
+                    }
+                    else
+                    {
+                        openTaskEditor(taskUri, cursor.getString(cursor.getColumnIndex(Instances.ACCOUNT_TYPE)));
+                        return false;
                     }
                 }
             }
@@ -837,27 +805,20 @@ public class TaskListFragment extends SupportFragment
      */
     public void setActivateOnItemClick(boolean activateOnItemClick)
     {
-        if (android.os.Build.VERSION.SDK_INT >= 11)
-        {
-            mExpandableListView.setChoiceMode(activateOnItemClick ? ListView.CHOICE_MODE_SINGLE : ListView.CHOICE_MODE_NONE);
-        }
+        mExpandableListView.setChoiceMode(activateOnItemClick ? ListView.CHOICE_MODE_SINGLE : ListView.CHOICE_MODE_NONE);
     }
 
 
-    @TargetApi(Build.VERSION_CODES.HONEYCOMB)
     public void setListViewScrollbarPositionLeft(boolean left)
     {
-        if (android.os.Build.VERSION.SDK_INT >= 11)
+        if (left)
         {
-            if (left)
-            {
-                mExpandableListView.setVerticalScrollbarPosition(View.SCROLLBAR_POSITION_LEFT);
-                // expandLV.setScrollBarStyle(style);
-            }
-            else
-            {
-                mExpandableListView.setVerticalScrollbarPosition(View.SCROLLBAR_POSITION_RIGHT);
-            }
+            mExpandableListView.setVerticalScrollbarPosition(View.SCROLLBAR_POSITION_LEFT);
+            // expandLV.setScrollBarStyle(style);
+        }
+        else
+        {
+            mExpandableListView.setVerticalScrollbarPosition(View.SCROLLBAR_POSITION_RIGHT);
         }
     }
 
@@ -925,7 +886,7 @@ public class TaskListFragment extends SupportFragment
     }
 
 
-    Runnable setOpenHandler = new Runnable()
+    private Runnable setOpenHandler = new SafeFragmentUiRunnable(this, new Runnable()
     {
         @Override
         public void run()
@@ -934,7 +895,7 @@ public class TaskListFragment extends SupportFragment
             mExpandableListView.expandGroups(mSavedExpandedGroups);
             setActivatedItem(mActivatedPositionGroup, mActivatedPositionChild);
         }
-    };
+    });
 
 
     public void setActivatedItem(int groupPosition, int childPosition)
@@ -944,12 +905,9 @@ public class TaskListFragment extends SupportFragment
         {
             try
             {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB)
-                {
-                    mExpandableListView
-                            .setItemChecked(mExpandableListView.getFlatListPosition(ExpandableListView.getPackedPositionForChild(groupPosition, childPosition)),
-                                    true);
-                }
+                mExpandableListView
+                        .setItemChecked(mExpandableListView.getFlatListPosition(ExpandableListView.getPackedPositionForChild(groupPosition, childPosition)),
+                                true);
             }
             catch (NullPointerException e)
             {
@@ -996,20 +954,16 @@ public class TaskListFragment extends SupportFragment
         if (mSelectedChildPosition != null)
         {
             // post delayed to allow the list view to finish creation
-            mExpandableListView.postDelayed(new Runnable()
+            mExpandableListView.postDelayed(new SafeFragmentUiRunnable(this, () ->
             {
-                @Override
-                public void run()
-                {
-                    mExpandableListView.expandGroup(mSelectedChildPosition.groupPosition);
-                    mSelectedChildPosition.flatListPosition = mExpandableListView.getFlatListPosition(
-                            RetainExpandableListView.getPackedPositionForChild(mSelectedChildPosition.groupPosition, mSelectedChildPosition.childPosition));
+                mExpandableListView.expandGroup(mSelectedChildPosition.groupPosition);
+                mSelectedChildPosition.flatListPosition = mExpandableListView.getFlatListPosition(
+                        RetainExpandableListView.getPackedPositionForChild(mSelectedChildPosition.groupPosition, mSelectedChildPosition.childPosition));
 
-                    setActivatedItem(mSelectedChildPosition.groupPosition, mSelectedChildPosition.childPosition);
-                    selectChildView(mExpandableListView, mSelectedChildPosition.groupPosition, mSelectedChildPosition.childPosition, true);
-                    mExpandableListView.smoothScrollToPosition(mSelectedChildPosition.flatListPosition);
-                }
-            }, 0);
+                setActivatedItem(mSelectedChildPosition.groupPosition, mSelectedChildPosition.childPosition);
+                selectChildView(mExpandableListView, mSelectedChildPosition.groupPosition, mSelectedChildPosition.childPosition, true);
+                mExpandableListView.smoothScrollToPosition(mSelectedChildPosition.flatListPosition);
+            }), 0);
         }
     }
 

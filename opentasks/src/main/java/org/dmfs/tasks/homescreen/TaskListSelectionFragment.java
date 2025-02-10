@@ -18,16 +18,14 @@ package org.dmfs.tasks.homescreen;
 
 import android.app.Activity;
 import android.database.Cursor;
-import android.net.Uri;
 import android.os.Bundle;
-import android.support.annotation.Nullable;
-import android.support.v4.app.ListFragment;
-import android.support.v4.app.LoaderManager;
-import android.support.v4.content.CursorLoader;
-import android.support.v4.content.Loader;
+import androidx.annotation.Nullable;
+import androidx.fragment.app.ListFragment;
+import androidx.loader.app.LoaderManager;
+import androidx.loader.content.CursorLoader;
+import androidx.loader.content.Loader;
 import android.view.LayoutInflater;
 import android.view.View;
-import android.view.View.OnClickListener;
 import android.view.ViewGroup;
 import android.widget.ListView;
 import android.widget.TextView;
@@ -88,29 +86,21 @@ public class TaskListSelectionFragment extends ListFragment implements LoaderMan
         mButtonOk = (TextView) rootView.findViewById(android.R.id.button1);
         mButtonCancel = (TextView) rootView.findViewById(android.R.id.button2);
 
-        mButtonOk.setOnClickListener(new OnClickListener()
+        mButtonOk.setOnClickListener(v ->
         {
-            @Override
-            public void onClick(View v)
+            if (mListener != null)
             {
-                if (mListener != null)
-                {
-                    mListener.onSelection(mTaskListAdapter.getSelectedLists());
-                }
-
+                mListener.onSelection(mTaskListAdapter.getSelectedLists());
             }
+
         });
-        mButtonCancel.setOnClickListener(new OnClickListener()
+        mButtonCancel.setOnClickListener(v ->
         {
-            @Override
-            public void onClick(View v)
+            if (mListener != null)
             {
-                if (mListener != null)
-                {
-                    mListener.onSelectionCancel();
-                }
-
+                mListener.onSelectionCancel();
             }
+
         });
 
         return rootView;
@@ -152,7 +142,7 @@ public class TaskListSelectionFragment extends ListFragment implements LoaderMan
     @Override
     public Loader<Cursor> onCreateLoader(int id, Bundle bundle)
     {
-        return new CursorLoader(mActivity, (Uri) bundle.getParcelable(LIST_LOADER_URI), TASK_LIST_PROJECTION, bundle.getString(LIST_LOADER_FILTER), null, null);
+        return new CursorLoader(mActivity, bundle.getParcelable(LIST_LOADER_URI), TASK_LIST_PROJECTION, bundle.getString(LIST_LOADER_FILTER), null, null);
     }
 
 
